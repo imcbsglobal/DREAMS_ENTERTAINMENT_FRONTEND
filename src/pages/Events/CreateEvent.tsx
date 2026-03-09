@@ -156,7 +156,7 @@ export default function CreateEvent() {
                 </button>
                 <button
                   type="button"
-                  onClick={() => navigate("/")}
+                  onClick={() => navigate("/dashboard")}
                   disabled={loading}
                   className="flex-1 bg-gray-100 hover:bg-gray-200 dark:bg-gray-800 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 font-medium py-2.5 px-4 rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-gray-500/20"
                 >

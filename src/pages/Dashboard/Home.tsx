@@ -44,9 +44,9 @@ export default function Home() {
       const headers = { Authorization: `Bearer ${token}` };
 
       const [eventsRes, staffRes, revenueRes] = await Promise.all([
-        axios.get('http://localhost:8000/api/admin/event-list/', { headers }),
-        axios.get('http://localhost:8000/api/admin/staff-list/', { headers }),
-        axios.get('http://localhost:8000/api/admin/reports/revenue/', { headers })
+        axios.get('https://de.imcbs.com/api/admin/event-list/', { headers }),
+        axios.get('https://de.imcbs.com/api/admin/staff-list/', { headers }),
+        axios.get('https://de.imcbs.com/api/admin/reports/revenue/', { headers })
       ]);
 
       const ticketsSold = revenueRes.data.revenue_by_event?.reduce((sum, e) => sum + (e.ticket_count || 0), 0) || 0;
@@ -58,7 +58,7 @@ export default function Home() {
       });
 
       // Fetch ticket data for chart
-      const ticketsRes = await axios.get('http://localhost:8000/api/admin/reports/tickets/', { headers });
+      const ticketsRes = await axios.get('https://de.imcbs.com/api/admin/reports/tickets/', { headers });
       const monthlyData = {};
       ticketsRes.data.tickets?.forEach(ticket => {
         const month = new Date(ticket.created_at).toLocaleDateString('en-US', { month: 'short' });
