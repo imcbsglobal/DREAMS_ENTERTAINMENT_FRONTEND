@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useNavigate, useLocation } from "react-router";
 import axios from "axios";
+import flatpickr from "flatpickr";
 import PageMeta from "../../components/common/PageMeta";
 import PageBreadcrumb from "../../components/common/PageBreadCrumb";
 import ComponentCard from "../../components/common/ComponentCard";
@@ -34,11 +35,18 @@ export default function EditEvent() {
     const fetchEvent = async () => {
       try {
         const token = localStorage.getItem("access_token");
-        const response = await axios.get(`https://de.imcbs.com/api/admin/event-detail/${eventId}/`, {
+        // First get all events, then find the specific one
+        const response = await axios.get(`https://de.imcbs.com/api/admin/event-list/`, {
           headers: { Authorization: `Bearer ${token}` }
         });
         
-        const event = response.data;
+        const event = response.data.find(e => e.id === parseInt(eventId));
+        if (!event) {
+          setMessage("Event not found");
+          setFetchingEvent(false);
+          return;
+        }
+        
         setFormData({
           name: event.name || "",
           place: event.place || "",
@@ -55,6 +63,45 @@ export default function EditEvent() {
 
     fetchEvent();
   }, [eventId]);
+
+  // Initialize date pickers after form data is loaded
+  useEffect(() => {
+    if (!fetchingEvent && formData.start_date) {
+      // Initialize start date picker
+      const startDatePicker = flatpickr("#start_date", {
+        dateFormat: "Y-m-d",
+        defaultDate: formData.start_date,
+        onChange: (selectedDates, dateStr) => {
+          setFormData(prev => ({ ...prev, start_date: dateStr }));
+        }
+      });
+
+      // Initialize end date picker
+      const endDatePicker = flatpickr("#end_date", {
+        dateFormat: "Y-m-d",
+        defaultDate: formData.end_date,
+        minDate: formData.start_date, // End date should be after start date
+        onChange: (selectedDates, dateStr) => {
+          setFormData(prev => ({ ...prev, end_date: dateStr }));
+        }
+      });
+
+      // Update end date picker's minDate when start date changes
+      const startInput = document.getElementById("start_date") as HTMLInputElement;
+      if (startInput) {
+        startInput.addEventListener('change', (e) => {
+          const target = e.target as HTMLInputElement;
+          endDatePicker.set('minDate', target.value);
+        });
+      }
+
+      // Cleanup function
+      return () => {
+        startDatePicker.destroy();
+        endDatePicker.destroy();
+      };
+    }
+  }, [fetchingEvent, formData.start_date, formData.end_date]);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
@@ -194,28 +241,46 @@ export default function EditEvent() {
               <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
                 <div>
                   <Label htmlFor="start_date">Start Date *</Label>
-                  <Input
-                    type="date"
-                    id="start_date"
-                    name="start_date"
-                    value={formData.start_date}
-                    onChange={handleInputChange}
-                    required
-                    disabled={loading}
-                  />
+                  <div className="relative">
+                    <Input
+                      type="text"
+                      id="start_date"
+                      name="start_date"
+                      value={formData.start_date}
+                      onChange={handleInputChange}
+                      placeholder="Select start date"
+                      required
+                      disabled={loading}
+                      className="cursor-pointer"
+                    />
+                    <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
+                      <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                      </svg>
+                    </div>
+                  </div>
                 </div>
 
                 <div>
                   <Label htmlFor="end_date">End Date *</Label>
-                  <Input
-                    type="date"
-                    id="end_date"
-                    name="end_date"
-                    value={formData.end_date}
-                    onChange={handleInputChange}
-                    required
-                    disabled={loading}
-                  />
+                  <div className="relative">
+                    <Input
+                      type="text"
+                      id="end_date"
+                      name="end_date"
+                      value={formData.end_date}
+                      onChange={handleInputChange}
+                      placeholder="Select end date"
+                      required
+                      disabled={loading}
+                      className="cursor-pointer"
+                    />
+                    <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
+                      <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                      </svg>
+                    </div>
+                  </div>
                 </div>
               </div>
 
