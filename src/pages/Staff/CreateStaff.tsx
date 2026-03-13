@@ -12,7 +12,7 @@ export default function CreateStaff() {
   const [formData, setFormData] = useState({
     username: "",
     password: "",
-    email: "",
+    email: "staff@dreamentertainment.com", // Default email for all staff
     first_name: "",
     last_name: "",
     role: "staff",
@@ -95,18 +95,6 @@ export default function CreateStaff() {
                     placeholder="Enter password"
                   />
                 </div>
-              </div>
-
-              <div>
-                <Label htmlFor="email">Email *</Label>
-                <Input
-                  type="email"
-                  id="email"
-                  name="email"
-                  value={formData.email}
-                  onChange={handleInputChange}
-                  placeholder="e.g., john@example.com"
-                />
               </div>
 
               <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">

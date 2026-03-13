@@ -98,12 +98,14 @@ export default function OngoingEvents() {
           </svg>
           <h3 className="text-lg font-semibold text-gray-800 dark:text-white mb-2">No {filter === "active" ? "Ongoing" : "Expired"} Events</h3>
           <p className="text-gray-500 dark:text-gray-400 mb-4">{filter === "active" ? "Create your first event to get started!" : "No expired events found."}</p>
-          <button 
-            className="bg-brand-500 hover:bg-brand-600 text-white font-medium py-2.5 px-4 rounded-lg transition-colors"
-            onClick={() => navigate("/create-event")}
-          >
-            Create Event
-          </button>
+          {filter === "active" && (
+            <button 
+              className="bg-brand-500 hover:bg-brand-600 text-white font-medium py-2.5 px-4 rounded-lg transition-colors"
+              onClick={() => navigate("/create-event")}
+            >
+              Create Event
+            </button>
+          )}
         </div>
       ) : (
         <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
@@ -153,9 +155,9 @@ export default function OngoingEvents() {
                   </button>
                   <button 
                     className="flex-1 bg-gray-100 hover:bg-gray-200 dark:bg-gray-800 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 text-xs font-medium py-2 px-3 rounded-lg transition-colors"
-                    onClick={() => navigate("/create-sub-event", { state: { eventId: event.id } })}
+                    onClick={() => navigate("/edit-event", { state: { eventId: event.id } })}
                   >
-                    Add Sub Event
+                    Edit Event
                   </button>
                 </div>
               </div>

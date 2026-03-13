@@ -6,7 +6,6 @@ import PageBreadcrumb from "../../components/common/PageBreadCrumb";
 import ComponentCard from "../../components/common/ComponentCard";
 import Label from "../../components/form/Label";
 import Input from "../../components/form/input/InputField";
-import TextArea from "../../components/form/input/TextArea";
 import Checkbox from "../../components/form/input/Checkbox";
 
 export default function CreateEntryType() {
@@ -19,7 +18,6 @@ export default function CreateEntryType() {
     sub_event: "",
     name: "",
     price: "",
-    description: "",
     is_active: true
   });
   const [loading, setLoading] = useState(false);
@@ -50,6 +48,14 @@ export default function CreateEntryType() {
             headers: { Authorization: `Bearer ${token}` }
           });
           setSubEvents(response.data);
+          
+          // Auto-select first sub-event as default
+          if (response.data.length > 0) {
+            setFormData(prev => ({
+              ...prev,
+              sub_event: response.data[0].id
+            }));
+          }
         } catch (err) {
           console.error("Failed to fetch sub-events:", err);
           setSubEvents([]);
@@ -183,19 +189,6 @@ export default function CreateEntryType() {
                     disabled={loading}
                   />
                 </div>
-              </div>
-
-              <div>
-                <Label htmlFor="description">Description</Label>
-                <TextArea
-                  id="description"
-                  name="description"
-                  value={formData.description}
-                  onChange={handleInputChange}
-                  placeholder="Enter description (optional)"
-                  disabled={loading}
-                  rows={4}
-                />
               </div>
 
               <div className="flex items-center gap-3">

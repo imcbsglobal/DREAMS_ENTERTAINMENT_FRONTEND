@@ -22,7 +22,8 @@ import CreateEvent from "./pages/Events/CreateEvent";
 import OngoingEvents from "./pages/Events/OngoingEvents";
 import CreateSubEvent from "./pages/Events/CreateSubEvent";
 import CreateEntryType from "./pages/Events/CreateEntryType";
-import TicketCustomization from "./pages/Events/TicketCustomization";
+import EditEvent from "./pages/Events/EditEvent";
+// import TicketCustomization from "./pages/Events/TicketCustomization";
 import CreateStaff from "./pages/Staff/CreateStaff";
 import ListStaff from "./pages/Staff/ListStaff";
 import AssignSubEvents from "./pages/Staff/AssignSubEvents";
@@ -49,7 +50,8 @@ export default function App() {
             <Route path="/ongoing-events" element={<OngoingEvents />} />
             <Route path="/create-sub-event" element={<CreateSubEvent />} />
             <Route path="/create-entry-type" element={<CreateEntryType />} />
-            <Route path="/ticket-customization" element={<TicketCustomization />} />
+            <Route path="/edit-event" element={<EditEvent />} />
+            {/* <Route path="/ticket-customization" element={<TicketCustomization />} /> */}
 
             {/* Staff */}
             <Route path="/create-staff" element={<CreateStaff />} />

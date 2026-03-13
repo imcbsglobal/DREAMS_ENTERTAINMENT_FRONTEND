@@ -64,9 +64,12 @@ export default function AssignSubEvents() {
       const response = await axios.get<Staff[]>(`${API_BASE}/admin/staff-list/`, {
         headers: { Authorization: `Bearer ${token}` }
       });
-      setStaffList(response.data.filter(s => s.role === "staff"));
+      const filteredStaff = response.data.filter(s => s.role === "staff");
+      setStaffList(filteredStaff);
+      return filteredStaff;
     } catch (error) {
       setMessage("Error loading staff");
+      return [];
     }
   };
 
@@ -110,6 +113,11 @@ export default function AssignSubEvents() {
     if (newSelected.has(subEventId)) {
       newSelected.delete(subEventId);
     } else {
+      if (newSelected.size >= 1) {
+        setMessage("A staff member can only be assigned to one event at a time");
+        setTimeout(() => setMessage(""), 3000);
+        return;
+      }
       newSelected.add(subEventId);
     }
     setSelectedSubEvents(newSelected);
@@ -118,6 +126,11 @@ export default function AssignSubEvents() {
   const assignSubEvents = async () => {
     if (!selectedStaffId) {
       setMessage("Please select a staff member");
+      return;
+    }
+
+    if (selectedSubEvents.size > 1) {
+      setMessage("A staff member can only be assigned to one event at a time");
       return;
     }
 
@@ -134,8 +147,19 @@ export default function AssignSubEvents() {
 
       setMessage("success");
       setAssignmentCount(prev => prev + 1);
-      await loadStaff();
-      handleStaffChange({ target: { value: selectedStaffId } } as React.ChangeEvent<HTMLSelectElement>);
+      
+      const updatedStaffList = await loadStaff();
+      const staff = updatedStaffList.find(s => s.id === parseInt(selectedStaffId));
+      
+      if (staff && staff.assigned_sub_events) {
+        setSelectedSubEvents(new Set(staff.assigned_sub_events));
+        const assignments = staff.assigned_sub_events.map(seId => {
+          const se = subEventsList.find(s => s.id === seId);
+          return se ? `${se.event_name} - ${se.name}` : "";
+        }).filter(Boolean);
+        setCurrentAssignments(assignments);
+      }
+      
       setTimeout(() => setMessage(""), 3000);
     } catch (error: any) {
       setMessage(error.response?.data?.error || "Assignment failed");
