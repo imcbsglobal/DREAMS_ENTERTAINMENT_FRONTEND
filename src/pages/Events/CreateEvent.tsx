@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router";
 import axios from "axios";
 import PageMeta from "../../components/common/PageMeta";
@@ -20,6 +20,20 @@ export default function CreateEvent() {
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
 
+  // Check authentication on component mount
+  useEffect(() => {
+    const token = localStorage.getItem("access_token");
+    console.log("=== COMPONENT MOUNT CHECK ===");
+    console.log("Token exists:", !!token);
+    console.log("Token preview:", token ? `${token.substring(0, 30)}...` : "NONE");
+    
+    if (!token) {
+      console.log("No token found, redirecting to signin");
+      setMessage("Please login to access this page");
+      setTimeout(() => navigate("/signin"), 2000);
+    }
+  }, [navigate]);
+
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
     setFormData(prev => ({
@@ -28,27 +42,154 @@ export default function CreateEvent() {
     }));
   };
 
+  const refreshToken = async () => {
+    try {
+      const refresh = localStorage.getItem("refresh_token");
+      if (!refresh) return null;
+      
+      const response = await axios.post("https://de.imcbs.com/api/token/refresh/", {
+        refresh: refresh
+      });
+      
+      localStorage.setItem("access_token", response.data.access);
+      return response.data.access;
+    } catch (error) {
+      localStorage.removeItem("access_token");
+      localStorage.removeItem("refresh_token");
+      return null;
+    }
+  };
+
+  const makeAuthenticatedRequest = async (token: string) => {
+    console.log("=== API REQUEST DEBUG ===");
+    console.log("Token being sent:", token ? `${token.substring(0, 20)}...` : "NULL/UNDEFINED");
+    console.log("API Endpoint:", "https://de.imcbs.com/api/admin/create-event/");
+    console.log("Form Data being sent:", JSON.stringify(formData, null, 2));
+    console.log("Request Headers:", {
+      'Authorization': `Bearer ${token}`,
+      'Content-Type': 'application/json'
+    });
+    
+    // Validate form data before sending
+    if (!formData.name || !formData.place || !formData.address || !formData.start_date || !formData.end_date) {
+      throw new Error("Missing required fields");
+    }
+    
+    return await axios.post("https://de.imcbs.com/api/admin/create-event/", formData, {
+      headers: { 
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      }
+    });
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setMessage("");
 
-    // Validate that dates are selected
+    // Validate all required fields
+    if (!formData.name.trim()) {
+      setMessage("Event name is required");
+      setLoading(false);
+      return;
+    }
+    
+    if (!formData.place.trim()) {
+      setMessage("Venue/Place is required");
+      setLoading(false);
+      return;
+    }
+    
+    if (!formData.address.trim()) {
+      setMessage("Address is required");
+      setLoading(false);
+      return;
+    }
+
     if (!formData.start_date || !formData.end_date) {
       setMessage("Please select both start and end dates");
       setLoading(false);
       return;
     }
+    
+    // Validate date order
+    if (new Date(formData.start_date) >= new Date(formData.end_date)) {
+      setMessage("End date must be after start date");
+      setLoading(false);
+      return;
+    }
 
     try {
-      const token = localStorage.getItem("access_token");
-      await axios.post("https://de.imcbs.com/api/admin/create-event/", formData, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      setMessage("success");
-      setTimeout(() => navigate("/ongoing-events"), 1500);
+      let token = localStorage.getItem("access_token");
+      let refreshToken = localStorage.getItem("refresh_token");
+      
+      // DEBUG: Log token status
+      console.log("=== TOKEN DEBUG ===");
+      console.log("Access Token:", token ? `EXISTS (${token.substring(0, 20)}...)` : "MISSING");
+      console.log("Refresh Token:", refreshToken ? `EXISTS (${refreshToken.substring(0, 20)}...)` : "MISSING");
+      console.log("Form Data:", formData);
+      
+      if (!token) {
+        setMessage("Authentication token not found. Please login again.");
+        setTimeout(() => navigate("/signin"), 2000);
+        setLoading(false);
+        return;
+      }
+
+      try {
+        console.log("=== MAKING FIRST REQUEST ===");
+        const response = await makeAuthenticatedRequest(token);
+        console.log("=== REQUEST SUCCESSFUL ===");
+        console.log("Response:", response.data);
+        setMessage("success");
+        setTimeout(() => navigate("/ongoing-events"), 1500);
+      } catch (err: any) {
+        console.log("=== REQUEST FAILED ===");
+        console.log("Error status:", err.response?.status);
+        console.log("Error data:", err.response?.data);
+        console.log("Full error:", err);
+        
+        if (err.response?.status === 401) {
+          console.log("=== ATTEMPTING TOKEN REFRESH ===");
+          // Token expired, try to refresh
+          const newToken = await refreshToken();
+          if (newToken) {
+            console.log("=== TOKEN REFRESHED, RETRYING ===");
+            // Retry with new token
+            const response = await makeAuthenticatedRequest(newToken);
+            console.log("=== RETRY SUCCESSFUL ===");
+            setMessage("success");
+            setTimeout(() => navigate("/ongoing-events"), 1500);
+          } else {
+            console.log("=== TOKEN REFRESH FAILED ===");
+            setMessage("Session expired. Please login again.");
+            setTimeout(() => navigate("/signin"), 2000);
+          }
+        } else {
+          throw err;
+        }
+      }
     } catch (err: any) {
-      setMessage(err.response?.data?.error || "Failed to create event");
+      console.log("=== FINAL ERROR HANDLING ===");
+      console.log("Error status:", err.response?.status);
+      console.log("Error data:", err.response?.data);
+      console.log("Error message:", err.message);
+      
+      if (err.response?.status === 500) {
+        setMessage("Server error occurred. Please check your data and try again.");
+      } else if (err.response?.status === 400) {
+        const errorMsg = err.response?.data?.error || err.response?.data?.detail || "Invalid data provided";
+        setMessage(errorMsg);
+      } else if (err.response?.data?.detail) {
+        setMessage(err.response.data.detail);
+      } else if (err.response?.data?.error) {
+        setMessage(err.response.data.error);
+      } else if (err.message) {
+        setMessage(err.message);
+      } else {
+        setMessage("Failed to create event. Please try again.");
+      }
     } finally {
       setLoading(false);
     }
