@@ -5,7 +5,9 @@ import PageMeta from "../../components/common/PageMeta";
 import PageBreadcrumb from "../../components/common/PageBreadCrumb";
 import ComponentCard from "../../components/common/ComponentCard";
 import Label from "../../components/form/Label";
-import Input from "../../components/form/input/InputField";
+import DatePicker from "../../components/form/DatePicker";
+import ExportWithDateRangeButton from "../../components/common/ExportWithDateRangeButton";
+import { exportTicketReport } from "../../utils/excelExport";
 
 interface Ticket {
   id: number;
@@ -97,6 +99,55 @@ export default function TicketReport() {
     }
   };
 
+  const handleTicketExport = async () => {
+    try {
+      // Fetch fresh data with current filters for export
+      const token = localStorage.getItem("access_token");
+      let url = "https://de.imcbs.com/api/admin/reports/tickets/?";
+      
+      const params = [];
+      if (selectedEvent) params.push(`event_id=${selectedEvent}`);
+      if (startDate) params.push(`start_date=${startDate}`);
+      if (endDate) params.push(`end_date=${endDate}`);
+      
+      url += params.join("&");
+      
+      const response = await axios.get<TicketReportResponse>(url, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      
+      const exportTickets = response.data.tickets || [];
+      const exportTotalTickets = response.data.total_tickets || 0;
+      
+      // Calculate entry type counts for export data
+      const exportCounts = exportTickets.reduce((acc: Record<string, number>, ticket) => {
+        acc[ticket.entry_type_name] = (acc[ticket.entry_type_name] || 0) + 1;
+        return acc;
+      }, {});
+      
+      const exportEntryTypeCounts = Object.entries(exportCounts).map(([name, count]) => ({ 
+        entry_type_name: name, 
+        count 
+      }));
+      
+      const selectedEventName = events.find(e => e.id.toString() === selectedEvent)?.name;
+      
+      exportTicketReport(
+        exportTickets,
+        exportEntryTypeCounts,
+        exportTotalTickets,
+        {
+          eventName: selectedEventName,
+          startDate,
+          endDate
+        }
+      );
+    } catch (error) {
+      console.error('Failed to fetch data for export:', error);
+      throw error; // Re-throw to trigger error toast
+    }
+  };
+
   return (
     <>
       <PageMeta
@@ -125,22 +176,33 @@ export default function TicketReport() {
             </div>
             <div>
               <Label htmlFor="startDate">Start Date</Label>
-              <Input
-                type="date"
+              <DatePicker
                 id="startDate"
                 value={startDate}
-                onChange={(e) => setStartDate(e.target.value)}
+                onChange={(date) => setStartDate(date)}
+                placeholder="Select start date"
+                maxDate={endDate || undefined}
               />
             </div>
             <div>
               <Label htmlFor="endDate">End Date</Label>
-              <Input
-                type="date"
+              <DatePicker
                 id="endDate"
                 value={endDate}
-                onChange={(e) => setEndDate(e.target.value)}
+                onChange={(date) => setEndDate(date)}
+                placeholder="Select end date"
+                minDate={startDate || undefined}
               />
             </div>
+          </div>
+          <div className="mt-4 flex justify-end">
+            <ExportWithDateRangeButton
+              onExport={handleTicketExport}
+              disabled={loading}
+              title="Ticket Report"
+            >
+              Export Ticket Report
+            </ExportWithDateRangeButton>
           </div>
         </div>
 

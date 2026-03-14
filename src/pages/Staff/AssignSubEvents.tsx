@@ -40,6 +40,7 @@ export default function AssignSubEvents() {
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
   const [assignmentCount, setAssignmentCount] = useState(0);
+  const [expandedEvents, setExpandedEvents] = useState<Set<string>>(new Set());
 
   const API_BASE = "https://de.imcbs.com/api";
   const token = localStorage.getItem("access_token");
@@ -168,6 +169,26 @@ export default function AssignSubEvents() {
 
   const selectedStaff = staffList.find(s => s.id === parseInt(selectedStaffId));
 
+  // Group sub-events by parent event
+  const groupedSubEvents = subEventsList.reduce((acc, subEvent) => {
+    const eventName = subEvent.event_name;
+    if (!acc[eventName]) {
+      acc[eventName] = [];
+    }
+    acc[eventName].push(subEvent);
+    return acc;
+  }, {} as Record<string, SubEvent[]>);
+
+  const toggleEventExpansion = (eventName: string) => {
+    const newExpanded = new Set(expandedEvents);
+    if (newExpanded.has(eventName)) {
+      newExpanded.delete(eventName);
+    } else {
+      newExpanded.add(eventName);
+    }
+    setExpandedEvents(newExpanded);
+  };
+
   return (
     <>
       <PageMeta
@@ -253,40 +274,88 @@ export default function AssignSubEvents() {
 
               {/* Sub-Events List */}
               <div>
-                <Label>Available Sub-Events (Select multiple)</Label>
-                <div className="space-y-2 max-h-64 overflow-y-auto">
+                <Label>Available Sub-Events</Label>
+                <div className="space-y-2 max-h-96 overflow-y-auto">
                   {loading ? (
                     <div className="text-center py-4 text-gray-500">Loading sub-events...</div>
-                  ) : subEventsList.length === 0 ? (
+                  ) : Object.keys(groupedSubEvents).length === 0 ? (
                     <div className="text-center py-4 text-gray-500">No sub-events available</div>
                   ) : (
-                    subEventsList.map(se => (
-                      <div
-                        key={se.id}
-                        className={`p-3 border rounded-lg cursor-pointer transition-colors ${
-                          selectedSubEvents.has(se.id)
-                            ? "bg-brand-50 border-brand-200 dark:bg-brand-900/20 dark:border-brand-800"
-                            : "bg-white border-gray-200 hover:bg-gray-50 dark:bg-gray-800 dark:border-gray-700 dark:hover:bg-gray-700"
-                        }`}
-                        onClick={() => toggleSubEvent(se.id)}
-                      >
-                        <div className="flex items-center">
-                          <input
-                            type="checkbox"
-                            checked={selectedSubEvents.has(se.id)}
-                            onChange={() => toggleSubEvent(se.id)}
-                            className="mr-3"
-                            onClick={(e) => e.stopPropagation()}
-                          />
-                          <div>
-                            <div className="font-medium text-gray-900 dark:text-white">{se.event_name} - {se.name}</div>
-                            <div className="text-sm text-gray-600 dark:text-gray-400">
-                              Code: {se.code} | {new Date(se.start_time).toLocaleDateString()} - {new Date(se.end_time).toLocaleDateString()}
+                    Object.entries(groupedSubEvents).map(([eventName, subEvents]) => {
+                      const isExpanded = expandedEvents.has(eventName);
+                      const hasSelectedChild = subEvents.some(se => selectedSubEvents.has(se.id));
+                      
+                      return (
+                        <div key={eventName} className="border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
+                          {/* Parent Event Header */}
+                          <div
+                            className={`p-3 cursor-pointer transition-colors flex items-center justify-between ${
+                              hasSelectedChild
+                                ? "bg-brand-50 dark:bg-brand-900/20"
+                                : "bg-gray-50 dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700"
+                            }`}
+                            onClick={() => toggleEventExpansion(eventName)}
+                          >
+                            <div className="flex items-center gap-2">
+                              <svg
+                                className={`w-4 h-4 transition-transform ${
+                                  isExpanded ? 'rotate-90' : ''
+                                }`}
+                                fill="none"
+                                stroke="currentColor"
+                                viewBox="0 0 24 24"
+                              >
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                              </svg>
+                              <div>
+                                <div className="font-semibold text-gray-900 dark:text-white">{eventName}</div>
+                                <div className="text-xs text-gray-500 dark:text-gray-400">
+                                  {subEvents.length} sub-event{subEvents.length !== 1 ? 's' : ''}
+                                </div>
+                              </div>
                             </div>
+                            {hasSelectedChild && (
+                              <span className="text-xs bg-brand-500 text-white px-2 py-1 rounded-full">
+                                Selected
+                              </span>
+                            )}
                           </div>
+                          
+                          {/* Child Sub-Events */}
+                          {isExpanded && (
+                            <div className="border-t border-gray-200 dark:border-gray-700">
+                              {subEvents.map(se => (
+                                <div
+                                  key={se.id}
+                                  className={`p-3 border-b last:border-b-0 border-gray-200 dark:border-gray-700 cursor-pointer transition-colors ${
+                                    selectedSubEvents.has(se.id)
+                                      ? "bg-brand-50 dark:bg-brand-900/20"
+                                      : "bg-white dark:bg-gray-900 hover:bg-gray-50 dark:hover:bg-gray-800"
+                                  }`}
+                                  onClick={() => toggleSubEvent(se.id)}
+                                >
+                                  <div className="flex items-center pl-6">
+                                    <input
+                                      type="checkbox"
+                                      checked={selectedSubEvents.has(se.id)}
+                                      onChange={() => toggleSubEvent(se.id)}
+                                      className="mr-3"
+                                      onClick={(e) => e.stopPropagation()}
+                                    />
+                                    <div className="flex-1">
+                                      <div className="font-medium text-gray-900 dark:text-white">{se.name}</div>
+                                      <div className="text-sm text-gray-600 dark:text-gray-400">
+                                        Code: {se.code} | {new Date(se.start_time).toLocaleDateString()} - {new Date(se.end_time).toLocaleDateString()}
+                                      </div>
+                                    </div>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
                         </div>
-                      </div>
-                    ))
+                      );
+                    })
                   )}
                 </div>
               </div>

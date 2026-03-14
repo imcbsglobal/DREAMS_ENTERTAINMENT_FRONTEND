@@ -4,15 +4,22 @@ import PageMeta from "../../components/common/PageMeta";
 import PageBreadcrumb from "../../components/common/PageBreadCrumb";
 import ComponentCard from "../../components/common/ComponentCard";
 import Label from "../../components/form/Label";
-import Input from "../../components/form/input/InputField";
+import DatePicker from "../../components/form/DatePicker";
+import ExportWithDateRangeButton from "../../components/common/ExportWithDateRangeButton";
+import { exportTicketReport, exportRevenueReport } from "../../utils/excelExport";
 
 interface Ticket {
   id: number;
   ticket_id: string;
+  ticket_code?: string;
   event_name: string;
+  event_code?: string;
   sub_event_name?: string;
   entry_type_name: string;
+  entry_type?: string;
   staff_username: string;
+  customer_name?: string;
+  customer_email?: string;
   price: string;
   created_at: string;
 }
@@ -46,7 +53,7 @@ interface RevenueReportResponse {
 }
 
 export default function TicketRevenueReport() {
-  const [activeTab, setActiveTab] = useState<"ticket" | "revenue">("ticket");
+  const [activeTab] = useState<"ticket" | "revenue">("ticket");
   
   // Ticket Report State
   const [tickets, setTickets] = useState<Ticket[]>([]);
@@ -63,18 +70,25 @@ export default function TicketRevenueReport() {
   const [selectedEvent, setSelectedEvent] = useState("");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
+  
+  // Minimize/Expand State
+  const [isRevenueMinimized, setIsRevenueMinimized] = useState(false);
+  const [isEntryTypeMinimized, setIsEntryTypeMinimized] = useState(false);
+  const [isTicketTableMinimized, setIsTicketTableMinimized] = useState(false);
 
   useEffect(() => {
     loadEvents();
   }, []);
 
   useEffect(() => {
-    if (activeTab === "ticket") {
-      loadTickets();
-    } else {
-      fetchRevenue();
-    }
-  }, [selectedEvent, startDate, endDate, activeTab]);
+    console.log('TicketRevenueReport useEffect triggered:', {
+      selectedEvent,
+      startDate,
+      endDate
+    });
+    loadTickets();
+    fetchRevenue();
+  }, [selectedEvent, startDate, endDate]);
 
   const loadEvents = async () => {
     try {
@@ -92,22 +106,104 @@ export default function TicketRevenueReport() {
     setTicketLoading(true);
     try {
       const token = localStorage.getItem("access_token");
-      let url = "https://de.imcbs.com/api/admin/reports/tickets/?";
+      let url = "https://de.imcbs.com/api/admin/reports/tickets/";
       
       const params = [];
       if (selectedEvent) params.push(`event_id=${selectedEvent}`);
-      if (startDate) params.push(`start_date=${startDate}`);
-      if (endDate) params.push(`end_date=${endDate}`);
+      if (startDate) {
+        params.push(`start_date=${startDate}`);
+        console.log('Adding start_date filter:', startDate);
+      }
+      if (endDate) {
+        params.push(`end_date=${endDate}`);
+        console.log('Adding end_date filter:', endDate);
+      }
       
-      url += params.join("&");
+      if (params.length > 0) {
+        url += '?' + params.join("&");
+      }
+      
+      console.log('Loading tickets with URL:', url);
+      console.log('Current filter state:', { selectedEvent, startDate, endDate });
       
       const response = await axios.get<TicketReportResponse>(url, {
         headers: { Authorization: `Bearer ${token}` }
       });
-      setTickets(response.data.tickets || []);
-      setTotalTickets(response.data.total_tickets || 0);
       
-      const counts = (response.data.tickets || []).reduce((acc: Record<string, number>, ticket) => {
+      console.log('API Response:', {
+        totalTickets: response.data.total_tickets,
+        ticketsCount: response.data.tickets?.length,
+        firstTicket: response.data.tickets?.[0],
+        lastTicket: response.data.tickets?.[response.data.tickets.length - 1],
+        sampleTicketFields: response.data.tickets?.[0] ? Object.keys(response.data.tickets[0]) : []
+      });
+      
+      // Debug: Check actual ticket dates to see if API is filtering
+      if (response.data.tickets && response.data.tickets.length > 0) {
+        const ticketDates = response.data.tickets.map(ticket => ({
+          id: ticket.ticket_id,
+          created_at: ticket.created_at,
+          date_only: ticket.created_at.split('T')[0]
+        }));
+        
+        const uniqueDates = [...new Set(ticketDates.map(t => t.date_only))].sort();
+        console.log('Ticket dates in response:', {
+          dateRange: `${uniqueDates[0]} to ${uniqueDates[uniqueDates.length - 1]}`,
+          uniqueDates: uniqueDates,
+          requestedRange: `${startDate} to ${endDate}`,
+          sampleTickets: ticketDates.slice(0, 5)
+        });
+        
+        // Check if any tickets fall within the requested date range
+        const ticketsInRange = response.data.tickets.filter(ticket => {
+          const ticketDate = ticket.created_at.split('T')[0];
+          const isInRange = (!startDate || ticketDate >= startDate) && (!endDate || ticketDate <= endDate);
+          return isInRange;
+        });
+        
+        console.log(`Tickets that should be in range (${startDate} to ${endDate}):`, {
+          totalReturned: response.data.tickets.length,
+          shouldBeInRange: ticketsInRange.length,
+          apiFilteringWorking: ticketsInRange.length === response.data.tickets.length
+        });
+        
+        if (ticketsInRange.length !== response.data.tickets.length) {
+          console.warn('⚠️ API is not filtering properly! Expected:', ticketsInRange.length, 'Got:', response.data.tickets.length);
+        }
+      }
+      
+      let filteredTickets = response.data.tickets || [];
+      let filteredTotal = response.data.total_tickets || 0;
+      
+      // Client-side filtering as fallback if API doesn't filter properly
+      if ((startDate || endDate) && filteredTickets.length > 0) {
+        const originalCount = filteredTickets.length;
+        filteredTickets = filteredTickets.filter(ticket => {
+          const ticketDate = ticket.created_at.split('T')[0];
+          
+          if (startDate && ticketDate < startDate) {
+            return false;
+          }
+          if (endDate && ticketDate > endDate) {
+            return false;
+          }
+          return true;
+        });
+        
+        if (originalCount !== filteredTickets.length) {
+          console.log('🔍 Client-side filtering applied:', {
+            original: originalCount,
+            filtered: filteredTickets.length,
+            dateRange: `${startDate} to ${endDate}`
+          });
+          filteredTotal = filteredTickets.length;
+        }
+      }
+      
+      setTickets(filteredTickets);
+      setTotalTickets(filteredTotal);
+      
+      const counts = filteredTickets.reduce((acc: Record<string, number>, ticket) => {
         acc[ticket.entry_type_name] = (acc[ticket.entry_type_name] || 0) + 1;
         return acc;
       }, {});
@@ -124,24 +220,391 @@ export default function TicketRevenueReport() {
     setRevenueLoading(true);
     try {
       const token = localStorage.getItem("access_token");
-      let url = "https://de.imcbs.com/api/admin/reports/revenue/?";
+      
+      // If date filters are applied, calculate revenue from ticket data instead
+      if (startDate || endDate) {
+        console.log('Date filters applied - calculating revenue from ticket data instead of revenue API');
+        await calculateRevenueFromTickets(token);
+        return;
+      }
+      
+      let url = "https://de.imcbs.com/api/admin/reports/revenue/";
       
       const params = [];
       if (selectedEvent) params.push(`event_id=${selectedEvent}`);
-      if (startDate) params.push(`start_date=${startDate}`);
-      if (endDate) params.push(`end_date=${endDate}`);
       
-      url += params.join("&");
+      if (params.length > 0) {
+        url += '?' + params.join("&");
+      }
+      
+      console.log('Loading revenue with URL:', url);
       
       const res = await axios.get<RevenueReportResponse>(url, {
         headers: { Authorization: `Bearer ${token}` }
       });
+      
+      console.log('Revenue API Response:', {
+        totalRevenue: res.data.total_revenue,
+        eventsCount: res.data.revenue_by_event?.length,
+        events: res.data.revenue_by_event,
+        sampleEvent: res.data.revenue_by_event?.[0] ? Object.keys(res.data.revenue_by_event[0]) : []
+      });
+      
       setRevenueData(res.data);
     } catch (err) {
       console.error("Failed to fetch revenue:", err);
     } finally {
       setRevenueLoading(false);
     }
+  };
+  
+  const calculateRevenueFromTickets = async (token: string) => {
+    try {
+      // Get filtered ticket data
+      let url = "https://de.imcbs.com/api/admin/reports/tickets/";
+      
+      const params = [];
+      if (selectedEvent) params.push(`event_id=${selectedEvent}`);
+      if (startDate) params.push(`start_date=${startDate}`);
+      if (endDate) params.push(`end_date=${endDate}`);
+      
+      if (params.length > 0) {
+        url += '?' + params.join("&");
+      }
+      
+      console.log('Fetching tickets for revenue calculation:', url);
+      
+      const response = await axios.get<TicketReportResponse>(url, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      
+      let filteredTickets = response.data.tickets || [];
+      
+      // Apply client-side date filtering if needed
+      if ((startDate || endDate) && filteredTickets.length > 0) {
+        filteredTickets = filteredTickets.filter(ticket => {
+          const ticketDate = ticket.created_at.split('T')[0];
+          
+          if (startDate && ticketDate < startDate) {
+            return false;
+          }
+          if (endDate && ticketDate > endDate) {
+            return false;
+          }
+          return true;
+        });
+      }
+      
+      // Calculate revenue by event from filtered tickets
+      const revenueByEvent: Record<string, {
+        event__name: string;
+        event__code: string;
+        ticket_count: number;
+        total_revenue: number;
+      }> = {};
+      
+      let totalRevenue = 0;
+      
+      filteredTickets.forEach(ticket => {
+        const eventKey = `${ticket.event_name}`;
+        const price = parseFloat(ticket.price) || 0;
+        
+        if (!revenueByEvent[eventKey]) {
+          revenueByEvent[eventKey] = {
+            event__name: ticket.event_name,
+            event__code: '', // We don't have event code in ticket data
+            ticket_count: 0,
+            total_revenue: 0
+          };
+        }
+        
+        revenueByEvent[eventKey].ticket_count += 1;
+        revenueByEvent[eventKey].total_revenue += price;
+        totalRevenue += price;
+      });
+      
+      const calculatedRevenueData: RevenueReportResponse = {
+        total_revenue: totalRevenue.toFixed(2),
+        revenue_by_event: Object.values(revenueByEvent).map(event => ({
+          ...event,
+          total_revenue: event.total_revenue.toFixed(2)
+        }))
+      };
+      
+      console.log('Calculated revenue from filtered tickets:', {
+        totalRevenue: calculatedRevenueData.total_revenue,
+        eventsCount: calculatedRevenueData.revenue_by_event.length,
+        ticketsProcessed: filteredTickets.length
+      });
+      
+      setRevenueData(calculatedRevenueData);
+      
+    } catch (err) {
+      console.error('Failed to calculate revenue from tickets:', err);
+    }
+  };
+
+  const handleTicketExport = async () => {
+    try {
+      const token = localStorage.getItem("access_token");
+      let url = "https://de.imcbs.com/api/admin/reports/tickets/?";
+      
+      const params = [];
+      if (selectedEvent) {
+        params.push(`event_id=${selectedEvent}`);
+      }
+      if (startDate) params.push(`start_date=${startDate}`);
+      if (endDate) params.push(`end_date=${endDate}`);
+      
+      url += params.join("&");
+      
+      console.log('=== EXPORT DEBUG INFO ===');
+      console.log('Export parameters:', {
+        startDate,
+        endDate,
+        selectedEvent,
+        selectedEventName: events.find(e => e.id.toString() === selectedEvent)?.name
+      });
+      console.log('Final Export URL:', url);
+      console.log('========================');
+      
+      const response = await axios.get<TicketReportResponse>(url, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      
+      let exportTickets = response.data.tickets || [];
+      let exportTotalTickets = response.data.total_tickets || 0;
+      
+      console.log('=== API RESPONSE DEBUG ===');
+      console.log('Total tickets from API:', exportTotalTickets);
+      console.log('Actual tickets received:', exportTickets.length);
+      console.log('First few tickets:', exportTickets.slice(0, 3).map(t => ({
+        id: t.ticket_id,
+        event: t.event_name,
+        date: t.created_at
+      })));
+      
+      // Client-side filtering as backup if API doesn't filter properly
+      if (startDate || endDate) {
+        const originalCount = exportTickets.length;
+        exportTickets = exportTickets.filter(ticket => {
+          const ticketDate = ticket.created_at.split('T')[0]; // Get YYYY-MM-DD format
+          
+          if (startDate && ticketDate < startDate) {
+            return false;
+          }
+          if (endDate && ticketDate > endDate) {
+            return false;
+          }
+          return true;
+        });
+        
+        if (originalCount !== exportTickets.length) {
+          console.log(`🔍 Client-side filtering applied: ${originalCount} -> ${exportTickets.length} tickets`);
+          console.log('Date filter:', { startDate, endDate });
+          exportTotalTickets = exportTickets.length; // Update total count
+        }
+      }
+      
+      console.log('Final filtered tickets:', exportTickets.length);
+      if (exportTickets.length > 0) {
+        const ticketDates = exportTickets.map(t => t.created_at.split('T')[0]);
+        const uniqueDates = [...new Set(ticketDates)].sort();
+        console.log('Date range in final data:', {
+          earliest: uniqueDates[0],
+          latest: uniqueDates[uniqueDates.length - 1],
+          uniqueDates: uniqueDates
+        });
+      }
+      console.log('========================');
+      
+      const exportCounts = exportTickets.reduce((acc: Record<string, number>, ticket) => {
+        acc[ticket.entry_type_name] = (acc[ticket.entry_type_name] || 0) + 1;
+        return acc;
+      }, {});
+      
+      const exportEntryTypeCounts = Object.entries(exportCounts).map(([name, count]) => ({ 
+        entry_type_name: name, 
+        count 
+      }));
+      
+      const selectedEventName = selectedEvent 
+        ? events.find(e => e.id.toString() === selectedEvent)?.name 
+        : undefined;
+      
+      exportTicketReport(
+        exportTickets,
+        exportEntryTypeCounts,
+        exportTotalTickets,
+        {
+          eventName: selectedEventName,
+          startDate: startDate,
+          endDate: endDate
+        }
+      );
+    } catch (error) {
+      console.error('Failed to fetch data for export:', error);
+      throw error;
+    }
+  };
+
+  const handleRevenueExport = async () => {
+    try {
+      console.log('=== REVENUE EXPORT DEBUG ===');
+      console.log('Export parameters:', {
+        startDate,
+        endDate,
+        selectedEvent,
+        selectedEventName: events.find(e => e.id.toString() === selectedEvent)?.name
+      });
+      
+      const token = localStorage.getItem("access_token");
+      let revenueDataToExport: RevenueReportResponse;
+      
+      // If date filters are applied, calculate revenue from ticket data (same as display logic)
+      if (startDate || endDate) {
+        console.log('Date filters applied - calculating revenue from ticket data for export');
+        revenueDataToExport = await calculateRevenueForExport(token, startDate, endDate, !!selectedEvent);
+      } else {
+        // Use revenue API for non-date filtered exports
+        console.log('No date filters - using revenue API for export');
+        let url = "https://de.imcbs.com/api/admin/reports/revenue/";
+        
+        const params = [];
+        if (selectedEvent) {
+          params.push(`event_id=${selectedEvent}`);
+        }
+        
+        if (params.length > 0) {
+          url += '?' + params.join("&");
+        }
+        
+        console.log('Revenue API URL for export:', url);
+        
+        const response = await axios.get<RevenueReportResponse>(url, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        
+        revenueDataToExport = response.data;
+      }
+      
+      const selectedEventName = selectedEvent 
+        ? events.find(e => e.id.toString() === selectedEvent)?.name 
+        : undefined;
+      
+      console.log('Exporting revenue data:', {
+        totalRevenue: revenueDataToExport.total_revenue,
+        eventsCount: revenueDataToExport.revenue_by_event?.length,
+        dateFiltered: !!(startDate || endDate)
+      });
+      
+      exportRevenueReport(
+        revenueDataToExport,
+        {
+          eventName: selectedEventName,
+          startDate: startDate,
+          endDate: endDate
+        }
+      );
+      
+      console.log('=== REVENUE EXPORT COMPLETED ===');
+    } catch (error) {
+      console.error('Failed to export revenue data:', error);
+      throw error;
+    }
+  };
+  
+  const calculateRevenueForExport = async (
+    token: string, 
+    exportStartDate: string, 
+    exportEndDate: string, 
+    includeEventFilter: boolean
+  ): Promise<RevenueReportResponse> => {
+    // Get filtered ticket data for export
+    let url = "https://de.imcbs.com/api/admin/reports/tickets/";
+    
+    const params = [];
+    if (includeEventFilter && selectedEvent) {
+      params.push(`event_id=${selectedEvent}`);
+    }
+    if (exportStartDate) params.push(`start_date=${exportStartDate}`);
+    if (exportEndDate) params.push(`end_date=${exportEndDate}`);
+    
+    if (params.length > 0) {
+      url += '?' + params.join("&");
+    }
+    
+    console.log('Fetching tickets for revenue export calculation:', url);
+    
+    const response = await axios.get<TicketReportResponse>(url, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    
+    let filteredTickets = response.data.tickets || [];
+    
+    // Apply client-side date filtering if needed (same as display logic)
+    if ((exportStartDate || exportEndDate) && filteredTickets.length > 0) {
+      const originalCount = filteredTickets.length;
+      filteredTickets = filteredTickets.filter(ticket => {
+        const ticketDate = ticket.created_at.split('T')[0];
+        
+        if (exportStartDate && ticketDate < exportStartDate) {
+          return false;
+        }
+        if (exportEndDate && ticketDate > exportEndDate) {
+          return false;
+        }
+        return true;
+      });
+      
+      if (originalCount !== filteredTickets.length) {
+        console.log(`🔍 Client-side filtering applied for export: ${originalCount} -> ${filteredTickets.length} tickets`);
+      }
+    }
+    
+    // Calculate revenue by event from filtered tickets (same logic as display)
+    const revenueByEvent: Record<string, {
+      event__name: string;
+      event__code: string;
+      ticket_count: number;
+      total_revenue: number;
+    }> = {};
+    
+    let totalRevenue = 0;
+    
+    filteredTickets.forEach(ticket => {
+      const eventKey = `${ticket.event_name}`;
+      const price = parseFloat(ticket.price) || 0;
+      
+      if (!revenueByEvent[eventKey]) {
+        revenueByEvent[eventKey] = {
+          event__name: ticket.event_name,
+          event__code: '', // We don't have event code in ticket data
+          ticket_count: 0,
+          total_revenue: 0
+        };
+      }
+      
+      revenueByEvent[eventKey].ticket_count += 1;
+      revenueByEvent[eventKey].total_revenue += price;
+      totalRevenue += price;
+    });
+    
+    const calculatedRevenueData: RevenueReportResponse = {
+      total_revenue: totalRevenue.toFixed(2),
+      revenue_by_event: Object.values(revenueByEvent).map(event => ({
+        ...event,
+        total_revenue: event.total_revenue.toFixed(2)
+      }))
+    };
+    
+    console.log('Calculated revenue for export:', {
+      totalRevenue: calculatedRevenueData.total_revenue,
+      eventsCount: calculatedRevenueData.revenue_by_event.length,
+      ticketsProcessed: filteredTickets.length
+    });
+    
+    return calculatedRevenueData;
   };
 
   return (
@@ -153,42 +616,141 @@ export default function TicketRevenueReport() {
       <PageBreadcrumb pageTitle="Ticket & Revenue Report" />
       
       <div className="space-y-6">
-        {/* Tabs */}
-        <div className="border-b border-gray-200 dark:border-gray-700">
-          <nav className="-mb-px flex space-x-8">
-            <button
-              onClick={() => setActiveTab("ticket")}
-              className={`py-4 px-1 border-b-2 font-medium text-sm ${
-                activeTab === "ticket"
-                  ? "border-brand-500 text-brand-600 dark:text-brand-400"
-                  : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:text-gray-400 dark:hover:text-gray-300"
-              }`}
-            >
-              Ticket Report
-            </button>
-            <button
-              onClick={() => setActiveTab("revenue")}
-              className={`py-4 px-1 border-b-2 font-medium text-sm ${
-                activeTab === "revenue"
-                  ? "border-brand-500 text-brand-600 dark:text-brand-400"
-                  : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:text-gray-400 dark:hover:text-gray-300"
-              }`}
-            >
-              Revenue Report
-            </button>
-          </nav>
+        {/* Dashboard Stats Cards */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+          {/* Total Tickets Card */}
+          <div className="relative overflow-hidden bg-gradient-to-br from-blue-500 via-blue-600 to-indigo-700 rounded-2xl p-6 text-white shadow-xl">
+            {/* Soft abstract circles */}
+            <div className="absolute -top-6 -right-6 w-32 h-32 bg-white/8 rounded-full blur-2xl opacity-60"></div>
+            <div className="absolute -bottom-8 -left-8 w-40 h-40 bg-white/4 rounded-full blur-3xl opacity-40"></div>
+            <div className="absolute top-1/3 right-1/5 w-20 h-20 bg-white/12 rounded-full blur-xl opacity-50"></div>
+            <div className="absolute bottom-1/4 left-1/3 w-16 h-16 bg-white/6 rounded-full blur-lg opacity-70"></div>
+            <div className="absolute top-3/4 right-2/3 w-12 h-12 bg-white/10 rounded-full blur-md opacity-30"></div>
+            
+            <div className="relative z-10 flex items-center justify-between">
+              <div>
+                <p className="text-blue-100 text-sm font-medium mb-1">Total Tickets</p>
+                <p className="text-3xl font-bold mb-1">{totalTickets.toLocaleString()}</p>
+                <p className="text-blue-100/80 text-xs">
+                  {activeTab === 'ticket' ? 'Filtered Results' : 'All Time'}
+                </p>
+              </div>
+              <div className="bg-white/15 backdrop-blur-sm p-3 rounded-xl">
+                <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 5v2m0 4v2m0 4v2M5 5a2 2 0 00-2 2v3a2 2 0 110 4v3a2 2 0 002 2h14a2 2 0 002-2v-3a2 2 0 110-4V7a2 2 0 00-2-2H5z" />
+                </svg>
+              </div>
+            </div>
+          </div>
+
+          {/* Total Revenue Card */}
+          <div className="relative overflow-hidden bg-gradient-to-br from-emerald-500 via-green-600 to-teal-700 rounded-2xl p-6 text-white shadow-xl">
+            {/* Soft abstract circles */}
+            <div className="absolute -top-4 -left-4 w-28 h-28 bg-white/10 rounded-full blur-2xl opacity-50"></div>
+            <div className="absolute -bottom-6 -right-6 w-36 h-36 bg-white/5 rounded-full blur-3xl opacity-35"></div>
+            <div className="absolute top-1/2 left-1/4 w-18 h-18 bg-white/8 rounded-full blur-xl opacity-60"></div>
+            <div className="absolute bottom-1/3 right-1/4 w-14 h-14 bg-white/12 rounded-full blur-lg opacity-45"></div>
+            <div className="absolute top-1/4 right-1/2 w-10 h-10 bg-white/7 rounded-full blur-md opacity-55"></div>
+            
+            <div className="relative z-10 flex items-center justify-between">
+              <div>
+                <p className="text-green-100 text-sm font-medium mb-1">Total Revenue</p>
+                <p className="text-3xl font-bold mb-1">
+                  ₹{revenueData ? parseFloat(revenueData.total_revenue).toLocaleString('en-IN', { minimumFractionDigits: 2 }) : '0.00'}
+                </p>
+                <p className="text-green-100/80 text-xs">
+                  {(startDate || endDate) ? 'Filtered Period' : 'All Time'}
+                </p>
+              </div>
+              <div className="bg-white/15 backdrop-blur-sm p-3 rounded-xl">
+                <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1" />
+                </svg>
+              </div>
+            </div>
+          </div>
+
+          {/* Active Events Card */}
+          <div className="relative overflow-hidden bg-gradient-to-br from-purple-500 via-violet-600 to-purple-700 rounded-2xl p-6 text-white shadow-xl">
+            {/* Soft abstract circles */}
+            <div className="absolute -top-8 -right-8 w-34 h-34 bg-white/6 rounded-full blur-3xl opacity-40"></div>
+            <div className="absolute -bottom-4 -left-4 w-24 h-24 bg-white/11 rounded-full blur-2xl opacity-55"></div>
+            <div className="absolute top-2/3 right-1/3 w-16 h-16 bg-white/9 rounded-full blur-xl opacity-65"></div>
+            <div className="absolute top-1/4 left-1/5 w-20 h-20 bg-white/7 rounded-full blur-lg opacity-45"></div>
+            <div className="absolute bottom-1/5 right-1/2 w-8 h-8 bg-white/13 rounded-full blur-sm opacity-70"></div>
+            
+            <div className="relative z-10 flex items-center justify-between">
+              <div>
+                <p className="text-purple-100 text-sm font-medium mb-1">Active Events</p>
+                <p className="text-3xl font-bold mb-1">
+                  {revenueData?.revenue_by_event?.length || events.length}
+                </p>
+                <p className="text-purple-100/80 text-xs">
+                  {selectedEvent ? 'Filtered' : 'Total Events'}
+                </p>
+              </div>
+              <div className="bg-white/15 backdrop-blur-sm p-3 rounded-xl">
+                <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                </svg>
+              </div>
+            </div>
+          </div>
+
+          {/* Today's Tickets Card */}
+          <div className="relative overflow-hidden bg-gradient-to-br from-orange-500 via-amber-600 to-yellow-600 rounded-2xl p-6 text-white shadow-xl">
+            {/* Soft abstract circles */}
+            <div className="absolute -top-6 -left-6 w-30 h-30 bg-white/9 rounded-full blur-2xl opacity-50"></div>
+            <div className="absolute -bottom-10 -right-10 w-42 h-42 bg-white/4 rounded-full blur-3xl opacity-30"></div>
+            <div className="absolute top-1/4 right-1/4 w-22 h-22 bg-white/12 rounded-full blur-xl opacity-60"></div>
+            <div className="absolute bottom-1/3 left-1/4 w-14 h-14 bg-white/8 rounded-full blur-lg opacity-55"></div>
+            <div className="absolute top-2/3 left-2/3 w-10 h-10 bg-white/15 rounded-full blur-md opacity-40"></div>
+            
+            <div className="relative z-10 flex items-center justify-between">
+              <div>
+                <p className="text-orange-100 text-sm font-medium mb-1">Today's Tickets</p>
+                <p className="text-3xl font-bold mb-1">
+                  {tickets.filter(ticket => {
+                    const ticketDate = new Date(ticket.created_at).toDateString();
+                    const today = new Date().toDateString();
+                    return ticketDate === today;
+                  }).length.toLocaleString()}
+                </p>
+                <p className="text-orange-100/80 text-xs">
+                  Generated Today
+                </p>
+              </div>
+              <div className="bg-white/15 backdrop-blur-sm p-3 rounded-xl">
+                <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              </div>
+            </div>
+          </div>
         </div>
 
-        {/* Filters */}
-        <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-6">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div>
-              <Label htmlFor="event">Event</Label>
+
+        {/* Compact Filters Section */}
+        <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm p-4 mb-6">
+          <div className="flex flex-wrap items-center gap-4">
+            <div className="flex items-center gap-2">
+              <div className="bg-brand-100 dark:bg-brand-900/30 p-2 rounded-lg">
+                <svg className="w-4 h-4 text-brand-600 dark:text-brand-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.414A1 1 0 013 6.707V4z" />
+                </svg>
+              </div>
+              <span className="text-sm font-semibold text-gray-900 dark:text-white">Filters:</span>
+            </div>
+            
+            <div className="flex-1 min-w-[200px]">
               <select
                 id="event"
                 value={selectedEvent}
-                onChange={(e) => setSelectedEvent(e.target.value)}
-                className="h-11 w-full rounded-lg border bg-transparent text-gray-800 border-gray-300 focus:border-brand-300 focus:ring-brand-500/20 dark:border-gray-700 dark:text-white/90 dark:focus:border-brand-800 px-4 py-2.5 text-sm shadow-theme-xs focus:outline-hidden focus:ring-3 dark:bg-gray-900 placeholder:text-gray-400 dark:placeholder:text-white/30"
+                onChange={(e) => {
+                  console.log('Event filter changed:', e.target.value);
+                  setSelectedEvent(e.target.value);
+                }}
+                className="h-10 w-full rounded-lg border bg-transparent text-gray-800 border-gray-300 focus:border-brand-300 focus:ring-brand-500/20 dark:border-gray-700 dark:text-white/90 dark:focus:border-brand-800 px-3 py-2 text-sm shadow-sm focus:outline-none focus:ring-2 dark:bg-gray-900 placeholder:text-gray-400 dark:placeholder:text-white/30 transition-colors"
               >
                 <option value="">All Events</option>
                 {events.map(event => (
@@ -198,193 +760,408 @@ export default function TicketRevenueReport() {
                 ))}
               </select>
             </div>
-            <div>
-              <Label htmlFor="startDate">Start Date</Label>
-              <Input
-                type="date"
+            
+            <div className="flex-1 min-w-[180px]">
+              <DatePicker
                 id="startDate"
                 value={startDate}
-                onChange={(e) => setStartDate(e.target.value)}
+                onChange={(date) => {
+                  console.log('Start date changed:', date);
+                  setStartDate(date);
+                }}
+                placeholder="Start date"
+                maxDate={endDate || undefined}
               />
             </div>
-            <div>
-              <Label htmlFor="endDate">End Date</Label>
-              <Input
-                type="date"
+            
+            <div className="flex-1 min-w-[180px]">
+              <DatePicker
                 id="endDate"
                 value={endDate}
-                onChange={(e) => setEndDate(e.target.value)}
+                onChange={(date) => {
+                  console.log('End date changed:', date);
+                  setEndDate(date);
+                }}
+                placeholder="End date"
+                minDate={startDate || undefined}
               />
+            </div>
+            
+            <div className="flex items-center gap-2">
+              {(selectedEvent || startDate || endDate) && (
+                <>
+                  <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200">
+                    {[selectedEvent && 'Event', startDate && 'Start', endDate && 'End'].filter(Boolean).length} Active
+                  </span>
+                  <button
+                    onClick={() => {
+                      console.log('Clearing all filters');
+                      setSelectedEvent('');
+                      setStartDate('');
+                      setEndDate('');
+                    }}
+                    className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-gray-700 bg-gray-100 border border-gray-300 rounded-lg hover:bg-gray-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-brand-500 dark:bg-gray-700 dark:text-gray-300 dark:border-gray-600 dark:hover:bg-gray-600 transition-colors"
+                  >
+                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                    Clear
+                  </button>
+                </>
+              )}
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={handleTicketExport}
+                  disabled={ticketLoading}
+                  className="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium text-white bg-brand-600 border border-transparent rounded-lg hover:bg-brand-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-brand-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                  </svg>
+                  Export Ticket
+                </button>
+                
+                <button
+                  onClick={handleRevenueExport}
+                  disabled={revenueLoading}
+                  className="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium text-white bg-green-600 border border-transparent rounded-lg hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                  </svg>
+                  Export Revenue
+                </button>
+              </div>
             </div>
           </div>
         </div>
 
-        {/* Ticket Report Content */}
-        {activeTab === "ticket" && (
-          <>
-            <ComponentCard title="Report Summary" desc="Overview of ticket generation">
-              <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
-                <div className="p-4 border-b border-gray-200 dark:border-gray-700">
-                  <h3 className="text-sm font-medium text-gray-900 dark:text-white">Entry Type Breakdown</h3>
+        {/* Revenue Report Content - Moved before tickets */}
+        <div className="space-y-6">
+          {/* Date Filter Notice */}
+          {(startDate || endDate) && (
+            <div className="bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-3">
+              <div className="flex items-center gap-2">
+                <div className="bg-blue-100 dark:bg-blue-800 p-1.5 rounded">
+                  <svg className="w-4 h-4 text-blue-600 dark:text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
                 </div>
+                <div>
+                  <p className="text-sm font-medium text-blue-900 dark:text-blue-100">Date-Filtered Revenue</p>
+                  <p className="text-xs text-blue-700 dark:text-blue-300">
+                    Revenue calculated from filtered ticket data ({startDate} to {endDate})
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Revenue by Event Table - Compact */}
+          {revenueLoading ? (
+            <div className="flex items-center justify-center py-8">
+              <div className="flex items-center gap-2">
+                <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-brand-600"></div>
+                <span className="text-sm text-gray-500 dark:text-gray-400">Loading revenue data...</span>
+              </div>
+            </div>
+          ) : revenueData?.revenue_by_event?.length > 0 ? (
+            <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm">
+              <div className="p-4 border-b border-gray-200 dark:border-gray-700">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <div className="bg-emerald-100 dark:bg-emerald-900/30 p-1.5 rounded">
+                      <svg className="w-4 h-4 text-emerald-600 dark:text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                      </svg>
+                    </div>
+                    <div>
+                      <h3 className="font-semibold text-gray-900 dark:text-white">Revenue by Event</h3>
+                      <p className="text-xs text-gray-500 dark:text-gray-400">
+                        {revenueData.revenue_by_event.length} events • Sorted by revenue
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => setIsRevenueMinimized(!isRevenueMinimized)}
+                    className="p-1.5 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                    title={isRevenueMinimized ? 'Expand' : 'Minimize'}
+                  >
+                    <svg className={`w-4 h-4 transition-transform duration-200 ${isRevenueMinimized ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </button>
+                </div>
+              </div>
+              
+              {!isRevenueMinimized && (
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
                     <thead className="bg-gray-50 dark:bg-gray-700">
                       <tr>
-                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Entry Type</th>
-                        <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Count</th>
-                        <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">%</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Event</th>
+                        <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Tickets</th>
+                        <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Revenue</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
-                      {entryTypeCounts.map(entry => {
-                        const percentage = totalTickets > 0 ? ((entry.count / totalTickets) * 100).toFixed(1) : '0';
-                        return (
-                          <tr key={entry.entry_type_name} className="hover:bg-gray-50 dark:hover:bg-gray-700">
-                            <td className="px-4 py-2 text-gray-900 dark:text-white">{entry.entry_type_name}</td>
-                            <td className="px-4 py-2 text-right font-medium text-gray-900 dark:text-white">{entry.count}</td>
-                            <td className="px-4 py-2 text-right text-gray-500 dark:text-gray-400">{percentage}%</td>
-                          </tr>
-                        );
-                      })}
-                      <tr className="bg-brand-50 dark:bg-brand-900/20 border-t-2 border-brand-200 dark:border-brand-800">
-                        <td className="px-4 py-3 font-bold text-brand-600 dark:text-brand-400">Total</td>
-                        <td className="px-4 py-3 text-right font-bold text-brand-600 dark:text-brand-400">{totalTickets}</td>
-                        <td className="px-4 py-3 text-right font-bold text-brand-600 dark:text-brand-400">100%</td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </ComponentCard>
-
-            <ComponentCard title="Tickets" desc="List of all generated tickets">
-              {ticketLoading ? (
-                <div className="flex items-center justify-center py-8">
-                  <div className="text-gray-500 dark:text-gray-400">Loading tickets...</div>
-                </div>
-              ) : tickets.length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-12">
-                  <svg width="80" height="80" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="text-gray-300 dark:text-gray-600 mb-4">
-                    <path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/>
-                    <polyline points="13 2 13 9 20 9"/>
-                  </svg>
-                  <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">No Tickets Found</h3>
-                  <p className="text-gray-500 dark:text-gray-400">No tickets have been generated yet</p>
-                </div>
-              ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm text-left">
-                    <thead className="text-xs text-gray-700 uppercase bg-gray-50 dark:bg-gray-700 dark:text-gray-400">
-                      <tr>
-                        <th className="px-6 py-3">Ticket ID</th>
-                        <th className="px-6 py-3">Event</th>
-                        <th className="px-6 py-3">Sub Event</th>
-                        <th className="px-6 py-3">Entry Type</th>
-                        <th className="px-6 py-3">Staff</th>
-                        <th className="px-6 py-3">Price</th>
-                        <th className="px-6 py-3">Date</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {tickets.map(ticket => (
-                        <tr key={ticket.id} className="bg-white border-b dark:bg-gray-800 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600">
-                          <td className="px-6 py-4 font-medium text-gray-900 dark:text-white">{ticket.ticket_id}</td>
-                          <td className="px-6 py-4">{ticket.event_name}</td>
-                          <td className="px-6 py-4">{ticket.sub_event_name || "-"}</td>
-                          <td className="px-6 py-4">{ticket.entry_type_name}</td>
-                          <td className="px-6 py-4">{ticket.staff_username}</td>
-                          <td className="px-6 py-4 font-medium text-green-600 dark:text-green-400">₹{ticket.price}</td>
-                          <td className="px-6 py-4">{new Date(ticket.created_at).toLocaleString()}</td>
-                        </tr>
-                      ))}
+                      {revenueData.revenue_by_event
+                        .sort((a, b) => parseFloat(b.total_revenue) - parseFloat(a.total_revenue))
+                        .map((event, index) => {
+                          const revenue = parseFloat(event.total_revenue);
+                          
+                          return (
+                            <tr key={index} className="hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">
+                              <td className="px-4 py-3">
+                                <div className="flex items-center gap-2">
+                                  <div className={`w-2 h-2 rounded-full ${
+                                    index === 0 ? 'bg-yellow-400' : 
+                                    index === 1 ? 'bg-gray-400' : 
+                                    index === 2 ? 'bg-amber-600' : 'bg-gray-300'
+                                  }`}></div>
+                                  <div>
+                                    <div className="font-medium text-gray-900 dark:text-white">{event.event__name}</div>
+                                    {event.event__code && (
+                                      <div className="text-xs text-gray-500 dark:text-gray-400">{event.event__code}</div>
+                                    )}
+                                  </div>
+                                </div>
+                              </td>
+                              <td className="px-4 py-3 text-center">
+                                <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200">
+                                  {event.ticket_count}
+                                </span>
+                              </td>
+                              <td className="px-4 py-3 text-right font-semibold text-gray-900 dark:text-white">
+                                ₹{revenue.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                              </td>
+                            </tr>
+                          );
+                        })}
                     </tbody>
                   </table>
                 </div>
               )}
-            </ComponentCard>
-          </>
-        )}
-
-        {/* Revenue Report Content */}
-        {activeTab === "revenue" && (
-          <>
-            {revenueLoading ? (
-              <div className="flex items-center justify-center py-8">
-                <div className="text-gray-500 dark:text-gray-400">Loading...</div>
+            </div>
+          ) : (
+            <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm p-8">
+              <div className="text-center">
+                <div className="bg-gray-100 dark:bg-gray-700 w-12 h-12 rounded-full flex items-center justify-center mx-auto mb-3">
+                  <svg className="w-6 h-6 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                  </svg>
+                </div>
+                <h3 className="text-sm font-medium text-gray-900 dark:text-white mb-1">No Revenue Data</h3>
+                <p className="text-xs text-gray-500 dark:text-gray-400">No revenue data available for the selected filters.</p>
               </div>
-            ) : revenueData ? (
-              <>
-                <ComponentCard title="Revenue Summary" desc="Overview of revenue statistics">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="bg-green-50 dark:bg-green-900/20 p-6 rounded-lg border border-green-200 dark:border-green-800 flex items-center">
-                      <div className="bg-green-100 dark:bg-green-800 p-3 rounded-lg mr-4">
-                        <svg className="w-6 h-6 text-green-600 dark:text-green-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                          <line x1="12" y1="1" x2="12" y2="23" />
-                          <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />
-                        </svg>
+            </div>
+          )}
+        </div>
+
+        {/* Ticket Report Content */}
+        <div className="space-y-6">
+          {/* Entry Type Breakdown */}
+          <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm">
+            <div className="p-4 border-b border-gray-200 dark:border-gray-700">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div className="bg-blue-100 dark:bg-blue-900/30 p-1.5 rounded">
+                    <svg className="w-4 h-4 text-blue-600 dark:text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 5v2m0 4v2m0 4v2M5 5a2 2 0 00-2 2v3a2 2 0 110 4v3a2 2 0 002 2h14a2 2 0 002-2v-3a2 2 0 110-4V7a2 2 0 00-2-2H5z" />
+                    </svg>
+                  </div>
+                  <div>
+                    <h3 className="font-semibold text-gray-900 dark:text-white">Entry Type Breakdown</h3>
+                    <p className="text-xs text-gray-500 dark:text-gray-400">
+                      {tickets.length} total tickets • {entryTypeCounts.length} entry types
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setIsEntryTypeMinimized(!isEntryTypeMinimized)}
+                  className="p-1.5 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                  title={isEntryTypeMinimized ? 'Expand' : 'Minimize'}
+                >
+                  <svg className={`w-4 h-4 transition-transform duration-200 ${isEntryTypeMinimized ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+            
+            {!isEntryTypeMinimized && (
+              <div className="p-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {entryTypeCounts.map((entry) => {
+                    const percentage = tickets.length > 0 ? (entry.count / tickets.length) * 100 : 0;
+                    const colors = {
+                      'VIP': 'bg-purple-500',
+                      'General': 'bg-blue-500',
+                      'Student': 'bg-green-500',
+                      'Senior': 'bg-orange-500',
+                      'Child': 'bg-pink-500'
+                    };
+                    const bgColor = colors[entry.entry_type_name as keyof typeof colors] || 'bg-gray-500';
+                    
+                    return (
+                      <div key={entry.entry_type_name} className="bg-gray-50 dark:bg-gray-700 rounded-lg p-3">
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="text-sm font-medium text-gray-900 dark:text-white">{entry.entry_type_name}</span>
+                          <span className="text-sm font-bold text-gray-900 dark:text-white">{entry.count}</span>
+                        </div>
+                        <div className="w-full bg-gray-200 dark:bg-gray-600 rounded-full h-2">
+                          <div 
+                            className={`h-2 rounded-full ${bgColor} transition-all duration-300`}
+                            style={{ width: `${percentage}%` }}
+                          ></div>
+                        </div>
+                        <div className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                          {percentage.toFixed(1)}% of total
+                        </div>
                       </div>
-                      <div>
-                        <h3 className="text-sm font-medium text-gray-600 dark:text-gray-400">Total Revenue</h3>
-                        <p className="text-2xl font-bold text-green-600 dark:text-green-400">₹{revenueData.total_revenue}</p>
-                      </div>
-                    </div>
-                    <div className="bg-gray-50 dark:bg-gray-900/20 p-6 rounded-lg border border-gray-200 dark:border-gray-800 flex items-center">
-                      <div className="bg-gray-100 dark:bg-gray-800 p-3 rounded-lg mr-4">
-                        <svg className="w-6 h-6 text-gray-600 dark:text-gray-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                          <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
-                          <line x1="16" y1="2" x2="16" y2="6" />
-                          <line x1="8" y1="2" x2="8" y2="6" />
-                          <line x1="3" y1="10" x2="21" y2="10" />
-                        </svg>
-                      </div>
-                      <div>
-                        <h3 className="text-sm font-medium text-gray-600 dark:text-gray-400">Total Events</h3>
-                        <p className="text-2xl font-bold text-gray-600 dark:text-gray-400">{revenueData.revenue_by_event?.length || 0}</p>
-                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Tickets Table */}
+          <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm">
+            <div className="p-4 border-b border-gray-200 dark:border-gray-700">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div className="bg-indigo-100 dark:bg-indigo-900/30 p-1.5 rounded">
+                    <svg className="w-4 h-4 text-indigo-600 dark:text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
+                    </svg>
+                  </div>
+                  <div>
+                    <h3 className="font-semibold text-gray-900 dark:text-white">Ticket Details</h3>
+                    <p className="text-xs text-gray-500 dark:text-gray-400">
+                      {tickets.length} tickets • Latest entries first
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setIsTicketTableMinimized(!isTicketTableMinimized)}
+                  className="p-1.5 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                  title={isTicketTableMinimized ? 'Expand' : 'Minimize'}
+                >
+                  <svg className={`w-4 h-4 transition-transform duration-200 ${isTicketTableMinimized ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+            
+            {!isTicketTableMinimized && (
+              <div className="overflow-x-auto">
+                {ticketLoading ? (
+                  <div className="flex items-center justify-center py-8">
+                    <div className="flex items-center gap-2">
+                      <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-brand-600"></div>
+                      <span className="text-sm text-gray-500 dark:text-gray-400">Loading tickets...</span>
                     </div>
                   </div>
-                </ComponentCard>
-
-                <ComponentCard title="Revenue by Event" desc="Detailed revenue breakdown by event">
-                  {revenueData.revenue_by_event?.length > 0 ? (
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-sm text-left">
-                        <thead className="text-xs text-gray-700 uppercase bg-gray-50 dark:bg-gray-700 dark:text-gray-400">
-                          <tr>
-                            <th className="px-6 py-3">Event Name</th>
-                            <th className="px-6 py-3">Event Code</th>
-                            <th className="px-6 py-3 text-right">Tickets Sold</th>
-                            <th className="px-6 py-3 text-right">Total Revenue</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {revenueData.revenue_by_event.map((event, index) => (
-                            <tr key={index} className="bg-white border-b dark:bg-gray-800 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600">
-                              <td className="px-6 py-4 font-medium text-gray-900 dark:text-white">{event.event__name}</td>
-                              <td className="px-6 py-4">{event.event__code}</td>
-                              <td className="px-6 py-4 text-right">{event.ticket_count}</td>
-                              <td className="px-6 py-4 text-right font-bold text-green-600 dark:text-green-400">₹{event.total_revenue}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  ) : (
-                    <div className="flex flex-col items-center justify-center py-12">
-                      <svg width="80" height="80" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="text-gray-300 dark:text-gray-600 mb-4">
-                        <line x1="12" y1="1" x2="12" y2="23" />
-                        <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />
+                ) : tickets.length > 0 ? (
+                  <table className="w-full text-sm">
+                    <thead className="bg-gray-50 dark:bg-gray-700">
+                      <tr>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Ticket</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Staff</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Event</th>
+                        <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Entry Type</th>
+                        <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Price</th>
+                        <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Date</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
+                      {tickets.slice(0, 50).map((ticket) => (
+                        <tr key={ticket.id} className="hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">
+                          <td className="px-4 py-3">
+                            <div className="flex items-center gap-2">
+                              <div className="bg-brand-100 dark:bg-brand-900/30 p-1.5 rounded">
+                                <svg className="w-3 h-3 text-brand-600 dark:text-brand-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 5v2m0 4v2m0 4v2M5 5a2 2 0 00-2 2v3a2 2 0 110 4v3a2 2 0 002 2h14a2 2 0 002-2v-3a2 2 0 110-4V7a2 2 0 00-2-2H5z" />
+                                </svg>
+                              </div>
+                              <div>
+                                <div className="font-medium text-gray-900 dark:text-white">#{ticket.ticket_id}</div>
+                                <div className="text-xs text-gray-500 dark:text-gray-400">{ticket.ticket_code || ticket.ticket_id}</div>
+                              </div>
+                            </div>
+                          </td>
+                          <td className="px-4 py-3">
+                            <div className="flex items-center gap-2">
+                              <div className="w-8 h-8 bg-gradient-to-br from-blue-400 to-purple-500 rounded-full flex items-center justify-center text-white text-xs font-semibold">
+                                {ticket.staff_username?.charAt(0)?.toUpperCase() || 'S'}
+                              </div>
+                              <div>
+                                <div className="font-medium text-gray-900 dark:text-white">{ticket.staff_username || 'Staff'}</div>
+                                <div className="text-xs text-gray-500 dark:text-gray-400">Staff Member</div>
+                              </div>
+                            </div>
+                          </td>
+                          <td className="px-4 py-3">
+                            <div>
+                              <div className="font-medium text-gray-900 dark:text-white">{ticket.event_name}</div>
+                              {ticket.event_code && (
+                                <div className="text-xs text-gray-500 dark:text-gray-400">{ticket.event_code}</div>
+                              )}
+                            </div>
+                          </td>
+                          <td className="px-4 py-3 text-center">
+                            <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
+                              ticket.entry_type_name === 'VIP' || ticket.entry_type === 'VIP' ? 'bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200' :
+                              ticket.entry_type_name === 'General' || ticket.entry_type === 'General' ? 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200' :
+                              ticket.entry_type_name === 'Student' || ticket.entry_type === 'Student' ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200' :
+                              ticket.entry_type_name === 'Senior' || ticket.entry_type === 'Senior' ? 'bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200' :
+                              'bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-200'
+                            }`}>
+                              {ticket.entry_type_name || ticket.entry_type}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 text-right font-semibold text-gray-900 dark:text-white">
+                            ₹{parseFloat(ticket.price || '0').toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </td>
+                          <td className="px-4 py-3 text-center text-xs text-gray-500 dark:text-gray-400">
+                            <div className="text-sm">
+                              <div className="text-gray-900 dark:text-white">
+                                {new Date(ticket.created_at).toLocaleDateString('en-IN', {
+                                  day: '2-digit',
+                                  month: 'short',
+                                  year: 'numeric'
+                                })}
+                              </div>
+                              <div className="text-gray-500 dark:text-gray-400">
+                                {new Date(ticket.created_at).toLocaleTimeString('en-IN', { 
+                                  hour: '2-digit', 
+                                  minute: '2-digit',
+                                  hour12: true
+                                })}
+                              </div>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                ) : (
+                  <div className="p-8 text-center">
+                    <div className="bg-gray-100 dark:bg-gray-700 w-12 h-12 rounded-full flex items-center justify-center mx-auto mb-3">
+                      <svg className="w-6 h-6 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 5v2m0 4v2m0 4v2M5 5a2 2 0 00-2 2v3a2 2 0 110 4v3a2 2 0 002 2h14a2 2 0 002-2v-3a2 2 0 110-4V7a2 2 0 00-2-2H5z" />
                       </svg>
-                      <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">No Revenue Data</h3>
-                      <p className="text-gray-500 dark:text-gray-400">No revenue data available</p>
                     </div>
-                  )}
-                </ComponentCard>
-              </>
-            ) : null}
-          </>
-        )}
+                    <h3 className="text-sm font-medium text-gray-900 dark:text-white mb-1">No Tickets Found</h3>
+                    <p className="text-xs text-gray-500 dark:text-gray-400">No tickets match the selected filters.</p>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
       </div>
     </>
   );

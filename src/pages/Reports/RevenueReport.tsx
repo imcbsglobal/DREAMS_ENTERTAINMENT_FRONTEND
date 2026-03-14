@@ -5,7 +5,9 @@ import PageMeta from "../../components/common/PageMeta";
 import PageBreadcrumb from "../../components/common/PageBreadCrumb";
 import ComponentCard from "../../components/common/ComponentCard";
 import Label from "../../components/form/Label";
-import Input from "../../components/form/input/InputField";
+import DatePicker from "../../components/form/DatePicker";
+import ExportWithDateRangeButton from "../../components/common/ExportWithDateRangeButton";
+import { exportRevenueReport } from "../../utils/excelExport";
 
 interface Event {
   id: number;
@@ -86,6 +88,125 @@ export default function RevenueReport() {
     fetchRevenue(selectedEvent, start, end);
   };
 
+  const handleRevenueExport = async (exportStartDate: string, exportEndDate: string, includeEventFilter: boolean) => {
+    try {
+      const token = localStorage.getItem("access_token");
+      
+      console.log('=== REVENUE EXPORT DEBUG ===');
+      console.log('Export parameters:', { exportStartDate, exportEndDate, includeEventFilter, selectedEvent });
+      
+      // Get tickets with date filter
+      let ticketUrl = "https://de.imcbs.com/api/admin/reports/tickets/?";
+      const ticketParams = [];
+      if (includeEventFilter && selectedEvent) ticketParams.push(`event_id=${selectedEvent}`);
+      if (exportStartDate) ticketParams.push(`start_date=${exportStartDate}`);
+      if (exportEndDate) ticketParams.push(`end_date=${exportEndDate}`);
+      ticketUrl += ticketParams.join("&");
+      
+      console.log('🎫 Fetching tickets URL:', ticketUrl);
+      const ticketResponse = await axios.get(ticketUrl, { headers: { Authorization: `Bearer ${token}` } });
+      
+      console.log('🎫 Raw ticket response:', ticketResponse.data);
+      const tickets = ticketResponse.data.tickets || ticketResponse.data || [];
+      console.log('🎫 Tickets array length:', tickets.length);
+      console.log('🎫 First 3 tickets:', tickets.slice(0, 3));
+      
+      // Client-side date filtering as backup
+      let filteredTickets = tickets;
+      if (exportStartDate || exportEndDate) {
+        console.log('📅 Applying client-side date filtering...');
+        filteredTickets = tickets.filter((ticket: any) => {
+          const ticketDate = ticket.date || ticket.created_at || ticket.timestamp;
+          if (!ticketDate) {
+            console.log('⚠️ Ticket has no date field:', ticket);
+            return true;
+          }
+          
+          const tDate = new Date(ticketDate).toISOString().split('T')[0];
+          const startOk = !exportStartDate || tDate >= exportStartDate;
+          const endOk = !exportEndDate || tDate <= exportEndDate;
+          
+          return startOk && endOk;
+        });
+        console.log(`🔍 Date filtering: ${tickets.length} -> ${filteredTickets.length} tickets`);
+      }
+      
+      if (filteredTickets.length === 0) {
+        console.log('❌ No tickets found, exporting empty revenue');
+        exportRevenueReport(
+          { total_revenue: '0', revenue_by_event: [] },
+          {
+            eventName: includeEventFilter && selectedEvent ? events.find(e => e.id.toString() === selectedEvent)?.name : undefined,
+            startDate: exportStartDate,
+            endDate: exportEndDate
+          }
+        );
+        return;
+      }
+      
+      console.log('💰 Calculating revenue from filtered tickets...');
+      const revenueByEvent = new Map();
+      
+      filteredTickets.forEach((ticket: any, index: number) => {
+        if (index < 3) console.log(`Processing ticket ${index}:`, ticket);
+        
+        const eventName = ticket.event_name || ticket.event || 'Unknown Event';
+        const eventCode = ticket.event_code || ticket.code || '';
+        const price = parseFloat(ticket.price || '0');
+        
+        if (index < 3) console.log(`Event: ${eventName}, Price: ${price}`);
+        
+        if (revenueByEvent.has(eventName)) {
+          const existing = revenueByEvent.get(eventName);
+          existing.ticket_count += 1;
+          existing.total_revenue += price;
+        } else {
+          revenueByEvent.set(eventName, {
+            event_name: eventName,
+            event_code: eventCode,
+            ticket_count: 1,
+            total_revenue: price
+          });
+        }
+      });
+      
+      console.log('💰 Revenue by event map:', Array.from(revenueByEvent.entries()));
+      
+      const revenueEvents = Array.from(revenueByEvent.values()).map(event => ({
+        event__name: event.event_name,
+        event__code: event.event_code,
+        ticket_count: event.ticket_count,
+        total_revenue: event.total_revenue.toString()
+      }));
+      
+      const totalRevenue = revenueEvents.reduce((sum, event) => sum + parseFloat(event.total_revenue), 0);
+      
+      const finalRevenueData = {
+        total_revenue: totalRevenue.toString(),
+        revenue_by_event: revenueEvents
+      };
+      
+      console.log('✅ Final revenue data:', finalRevenueData);
+      console.log('================================');
+      
+      const selectedEventName = includeEventFilter && selectedEvent 
+        ? events.find(e => e.id.toString() === selectedEvent)?.name 
+        : undefined;
+      
+      exportRevenueReport(
+        finalRevenueData,
+        {
+          eventName: selectedEventName,
+          startDate: exportStartDate,
+          endDate: exportEndDate
+        }
+      );
+    } catch (error) {
+      console.error('❌ Revenue export failed:', error);
+      throw error;
+    }
+  };
+
   return (
     <>
       <PageMeta
@@ -116,22 +237,35 @@ export default function RevenueReport() {
             </div>
             <div>
               <Label htmlFor="startDate">Start Date</Label>
-              <Input
-                type="date"
+              <DatePicker
                 id="startDate"
                 value={startDate}
-                onChange={(e) => handleDateChange(e.target.value, endDate)}
+                onChange={(date) => handleDateChange(date, endDate)}
+                placeholder="Select start date"
+                maxDate={endDate || undefined}
               />
             </div>
             <div>
               <Label htmlFor="endDate">End Date</Label>
-              <Input
-                type="date"
+              <DatePicker
                 id="endDate"
                 value={endDate}
-                onChange={(e) => handleDateChange(startDate, e.target.value)}
+                onChange={(date) => handleDateChange(startDate, date)}
+                placeholder="Select end date"
+                minDate={startDate || undefined}
               />
             </div>
+          </div>
+          <div className="mt-4 flex justify-end">
+            <ExportWithDateRangeButton
+              onExport={handleRevenueExport}
+              disabled={!revenueData}
+              title="Revenue Report"
+              hasEventFilter={!!selectedEvent}
+              eventFilterName={events.find(e => e.id.toString() === selectedEvent)?.name || ''}
+            >
+              Export Revenue Report
+            </ExportWithDateRangeButton>
           </div>
         </div>
 
