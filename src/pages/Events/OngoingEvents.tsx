@@ -6,7 +6,7 @@ import PageBreadcrumb from "../../components/common/PageBreadCrumb";
 import ComponentCard from "../../components/common/ComponentCard";
 import ConfirmDialog from "../../components/ui/ConfirmDialog";
 import Toast from "../../components/ui/Toast";
-import EditEventModal from "../../components/ui/EditEventModal";
+
 
 export default function OngoingEvents() {
   const navigate = useNavigate();
@@ -22,10 +22,7 @@ export default function OngoingEvents() {
     eventName: string;
   }>({ isOpen: false, eventId: null, eventName: "" });
   
-  const [editModal, setEditModal] = useState<{
-    isOpen: boolean;
-    eventId: number | null;
-  }>({ isOpen: false, eventId: null });
+
   
   const [toast, setToast] = useState<{
     isVisible: boolean;
@@ -60,15 +57,7 @@ export default function OngoingEvents() {
   };
 
   const handleEditEvent = (eventId: number) => {
-    setEditModal({ isOpen: true, eventId });
-  };
-
-  const handleEditSuccess = (updatedEvent: any) => {
-    // Update the event in the events list
-    setEvents(events.map((event: any) => 
-      event.id === updatedEvent.id ? updatedEvent : event
-    ));
-    showToast("Event updated successfully!", "success");
+    navigate("/edit-event", { state: { eventId } });
   };
 
   const confirmDelete = async () => {
@@ -256,13 +245,7 @@ export default function OngoingEvents() {
         </div>
       )}
       
-      {/* Edit Event Modal */}
-      <EditEventModal
-        isOpen={editModal.isOpen}
-        onClose={() => setEditModal({ isOpen: false, eventId: null })}
-        onSuccess={handleEditSuccess}
-        eventId={editModal.eventId}
-      />
+
       
       {/* Confirm Dialog */}
       <ConfirmDialog
