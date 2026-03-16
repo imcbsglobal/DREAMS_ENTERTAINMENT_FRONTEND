@@ -17,8 +17,23 @@ export default function CreateEvent() {
     start_date: "",
     end_date: ""
   });
+  const [selectedSubEvents, setSelectedSubEvents] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
+
+  const SUB_EVENTS = [
+    { id: "ENTRY TICKET", label: "🎫 ENTRY TICKET", emoji: "🎫" },
+    { id: "Giant wheel", label: "🎡 Giant wheel", emoji: "🎡" },
+    { id: "Break dance", label: "💃 Break dance", emoji: "💃" },
+    { id: "Colombus", label: "🚢 Colombus", emoji: "🚢" },
+    { id: "Well of death", label: "💀 Well of death", emoji: "💀" },
+    { id: "Ranger", label: "🤠 Ranger", emoji: "🤠" },
+    { id: "Dragon train", label: "🐉 Dragon train", emoji: "🐉" },
+    { id: "Bouncy", label: "🏀 Bouncy", emoji: "🏀" },
+    { id: "Toy car", label: "🚗 Toy car", emoji: "🚗" },
+    { id: "Toy helicopter", label: "🚁 Toy helicopter", emoji: "🚁" },
+    { id: "Toy Boat", label: "⛵ Toy Boat", emoji: "⛵" }
+  ];
 
   // Check authentication on component mount
   useEffect(() => {
@@ -61,10 +76,15 @@ export default function CreateEvent() {
   };
 
   const makeAuthenticatedRequest = async (token: string) => {
+    const requestData = {
+      ...formData,
+      selected_sub_events: selectedSubEvents.length > 0 ? selectedSubEvents : undefined
+    };
+    
     console.log("=== API REQUEST DEBUG ===");
     console.log("Token being sent:", token ? `${token.substring(0, 20)}...` : "NULL/UNDEFINED");
     console.log("API Endpoint:", "https://de.imcbs.com/api/admin/create-event/");
-    console.log("Form Data being sent:", JSON.stringify(formData, null, 2));
+    console.log("Form Data being sent:", JSON.stringify(requestData, null, 2));
     console.log("Request Headers:", {
       'Authorization': `Bearer ${token}`,
       'Content-Type': 'application/json'
@@ -75,7 +95,7 @@ export default function CreateEvent() {
       throw new Error("Missing required fields");
     }
     
-    return await axios.post("https://de.imcbs.com/api/admin/create-event/", formData, {
+    return await axios.post("https://de.imcbs.com/api/admin/create-event/", requestData, {
       headers: { 
         'Authorization': `Bearer ${token}`,
         'Content-Type': 'application/json'
@@ -285,6 +305,57 @@ export default function CreateEvent() {
                     }));
                   }}
                 />
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between mb-3">
+                  <Label className="mb-0">Select Sub-Events (Activities)</Label>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setSelectedSubEvents(SUB_EVENTS.map(se => se.id))}
+                      className="text-xs bg-green-500 hover:bg-green-600 text-white px-3 py-1 rounded-lg transition-colors"
+                    >
+                      Select All
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedSubEvents([])}
+                      className="text-xs bg-red-500 hover:bg-red-600 text-white px-3 py-1 rounded-lg transition-colors"
+                    >
+                      Clear All
+                    </button>
+                  </div>
+                </div>
+                <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">
+                  Choose which activities/rides to include in this event. If none selected, default 'ENTRY TICKET' will be created.
+                </p>
+                <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                  {SUB_EVENTS.map((subEvent) => (
+                    <label
+                      key={subEvent.id}
+                      className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-all ${
+                        selectedSubEvents.includes(subEvent.id)
+                          ? "bg-brand-50 dark:bg-brand-900/20 border-brand-500 dark:border-brand-700"
+                          : "bg-gray-50 dark:bg-gray-800 border-gray-200 dark:border-gray-700 hover:border-brand-300 dark:hover:border-brand-800"
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={selectedSubEvents.includes(subEvent.id)}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setSelectedSubEvents(prev => [...prev, subEvent.id]);
+                          } else {
+                            setSelectedSubEvents(prev => prev.filter(id => id !== subEvent.id));
+                          }
+                        }}
+                        className="w-4 h-4 text-brand-500 border-gray-300 dark:border-gray-600 rounded focus:ring-brand-500 focus:ring-2"
+                      />
+                      <span className="text-sm font-medium text-gray-700 dark:text-gray-300">{subEvent.label}</span>
+                    </label>
+                  ))}
+                </div>
               </div>
 
               <div className="flex gap-4 pt-4">
