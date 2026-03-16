@@ -4,12 +4,34 @@ import axios from "axios";
 import PageMeta from "../../components/common/PageMeta";
 import PageBreadcrumb from "../../components/common/PageBreadCrumb";
 import ComponentCard from "../../components/common/ComponentCard";
+import ConfirmDialog from "../../components/ui/ConfirmDialog";
+import Toast from "../../components/ui/Toast";
+import EditEventModal from "../../components/ui/EditEventModal";
 
 export default function OngoingEvents() {
   const navigate = useNavigate();
   const [events, setEvents] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState("active");
+  const [deleteLoading, setDeleteLoading] = useState<number | null>(null);
+  
+  // Dialog and Toast states
+  const [confirmDialog, setConfirmDialog] = useState<{
+    isOpen: boolean;
+    eventId: number | null;
+    eventName: string;
+  }>({ isOpen: false, eventId: null, eventName: "" });
+  
+  const [editModal, setEditModal] = useState<{
+    isOpen: boolean;
+    eventId: number | null;
+  }>({ isOpen: false, eventId: null });
+  
+  const [toast, setToast] = useState<{
+    isVisible: boolean;
+    message: string;
+    type: "success" | "error" | "info";
+  }>({ isVisible: false, message: "", type: "info" });
 
   useEffect(() => {
     const fetchEvents = async () => {
@@ -28,6 +50,51 @@ export default function OngoingEvents() {
 
     fetchEvents();
   }, []);
+
+  const showToast = (message: string, type: "success" | "error" | "info") => {
+    setToast({ isVisible: true, message, type });
+  };
+
+  const handleDeleteEvent = async (eventId: number, eventName: string) => {
+    setConfirmDialog({ isOpen: true, eventId, eventName });
+  };
+
+  const handleEditEvent = (eventId: number) => {
+    setEditModal({ isOpen: true, eventId });
+  };
+
+  const handleEditSuccess = (updatedEvent: any) => {
+    // Update the event in the events list
+    setEvents(events.map((event: any) => 
+      event.id === updatedEvent.id ? updatedEvent : event
+    ));
+    showToast("Event updated successfully!", "success");
+  };
+
+  const confirmDelete = async () => {
+    const { eventId, eventName } = confirmDialog;
+    if (!eventId) return;
+
+    setConfirmDialog({ isOpen: false, eventId: null, eventName: "" });
+    setDeleteLoading(eventId);
+    
+    try {
+      const token = localStorage.getItem("access_token");
+      await axios.delete(`https://de.imcbs.com/api/admin/delete-event/${eventId}/`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      
+      // Remove event from state
+      setEvents(events.filter((event: any) => event.id !== eventId));
+      showToast(`Event "${eventName}" deleted successfully!`, "success");
+    } catch (err: any) {
+      const errorMessage = err.response?.data?.error || err.response?.data?.message || "Failed to delete event";
+      showToast(errorMessage, "error");
+      console.error("Failed to delete event:", err);
+    } finally {
+      setDeleteLoading(null);
+    }
+  };
 
   const filteredEvents = events.filter((event: any) => {
     const today = new Date();
@@ -148,16 +215,39 @@ export default function OngoingEvents() {
                 
                 <div className="flex gap-2 pt-4">
                   <button 
-                    className="flex-1 bg-brand-500 hover:bg-brand-600 text-white text-xs font-medium py-2 px-3 rounded-lg transition-colors"
+                    className="flex-1 bg-brand-500 hover:bg-brand-600 text-white text-sm font-medium py-2 px-3 rounded-lg transition-colors"
                     onClick={() => navigate("/create-entry-type", { state: { eventId: event.id } })}
                   >
                     Add Entry Type
                   </button>
                   <button 
-                    className="flex-1 bg-gray-100 hover:bg-gray-200 dark:bg-gray-800 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 text-xs font-medium py-2 px-3 rounded-lg transition-colors"
-                    onClick={() => navigate("/edit-event", { state: { eventId: event.id } })}
+                    className="bg-gray-100 hover:bg-gray-200 dark:bg-gray-800 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 p-2 rounded-lg transition-colors"
+                    onClick={() => handleEditEvent(event.id)}
+                    title="Edit Event"
                   >
-                    Edit Event
+                    <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+                      <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+                    </svg>
+                  </button>
+                  <button 
+                    className="bg-red-100 hover:bg-red-200 dark:bg-red-900/20 dark:hover:bg-red-900/30 text-red-600 dark:text-red-400 p-2 rounded-lg transition-colors disabled:opacity-50"
+                    onClick={() => handleDeleteEvent(event.id, event.name)}
+                    disabled={deleteLoading === event.id}
+                    title="Delete Event"
+                  >
+                    {deleteLoading === event.id ? (
+                      <svg className="w-5 h-5 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <path d="M21 12a9 9 0 1 1-6.219-8.56" />
+                      </svg>
+                    ) : (
+                      <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <polyline points="3 6 5 6 21 6" />
+                        <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                        <line x1="10" y1="11" x2="10" y2="17" />
+                        <line x1="14" y1="11" x2="14" y2="17" />
+                      </svg>
+                    )}
                   </button>
                 </div>
               </div>
@@ -165,6 +255,34 @@ export default function OngoingEvents() {
           ))}
         </div>
       )}
+      
+      {/* Edit Event Modal */}
+      <EditEventModal
+        isOpen={editModal.isOpen}
+        onClose={() => setEditModal({ isOpen: false, eventId: null })}
+        onSuccess={handleEditSuccess}
+        eventId={editModal.eventId}
+      />
+      
+      {/* Confirm Dialog */}
+      <ConfirmDialog
+        isOpen={confirmDialog.isOpen}
+        onClose={() => setConfirmDialog({ isOpen: false, eventId: null, eventName: "" })}
+        onConfirm={confirmDelete}
+        title="Delete Event"
+        message={`Are you sure you want to delete "${confirmDialog.eventName}"?\n\nThis will permanently delete:\n• The event\n• All sub-events\n• All entry types\n• All tickets\n• All related data\n\nThis action CANNOT be undone!`}
+        confirmText="Delete Event"
+        cancelText="Cancel"
+        type="danger"
+      />
+      
+      {/* Toast Notifications */}
+      <Toast
+        isVisible={toast.isVisible}
+        message={toast.message}
+        type={toast.type}
+        onClose={() => setToast({ ...toast, isVisible: false })}
+      />
     </>
   );
 }

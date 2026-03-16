@@ -21,6 +21,8 @@ export default function CreateStaff() {
   });
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
+  const [isUnlimitedRange, setIsUnlimitedRange] = useState(false);
+  const [originalRangeEnd, setOriginalRangeEnd] = useState("");
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
@@ -28,6 +30,24 @@ export default function CreateStaff() {
       ...prev,
       [name]: value
     }));
+  };
+
+  const handleUnlimitedToggle = (checked: boolean) => {
+    setIsUnlimitedRange(checked);
+    if (checked) {
+      // Save current range_end value and set to unlimited
+      setOriginalRangeEnd(formData.range_end);
+      setFormData(prev => ({
+        ...prev,
+        range_end: "999999999" // Large number for API
+      }));
+    } else {
+      // Restore original range_end value
+      setFormData(prev => ({
+        ...prev,
+        range_end: originalRangeEnd
+      }));
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -154,14 +174,38 @@ export default function CreateStaff() {
                 <div>
                   <Label htmlFor="range_end">Ticket Range End *</Label>
                   <Input
-                    type="number"
+                    type={isUnlimitedRange ? "text" : "number"}
                     id="range_end"
                     name="range_end"
-                    value={formData.range_end}
+                    value={isUnlimitedRange ? "∞ Unlimited" : formData.range_end}
                     onChange={handleInputChange}
                     placeholder="e.g., 6000"
                     min="1"
+                    readOnly={isUnlimitedRange}
+                    disabled={loading}
+                    className={isUnlimitedRange ? "bg-gray-100 dark:bg-gray-700 text-center font-medium" : ""}
                   />
+                  <div className="flex items-center gap-2 mt-2">
+                    <input
+                      type="checkbox"
+                      id="unlimited_range"
+                      checked={isUnlimitedRange}
+                      onChange={(e) => handleUnlimitedToggle(e.target.checked)}
+                      disabled={loading}
+                      className="w-4 h-4 text-brand-500 border-gray-300 dark:border-gray-600 rounded focus:ring-brand-500 focus:ring-2"
+                    />
+                    <label 
+                      htmlFor="unlimited_range" 
+                      className="text-sm text-gray-600 dark:text-gray-400 cursor-pointer"
+                    >
+                      Set as Unlimited Range
+                    </label>
+                  </div>
+                  {isUnlimitedRange && (
+                    <p className="text-xs text-blue-600 dark:text-blue-400 mt-1">
+                      ℹ️ Staff can generate unlimited tickets (no range limit)
+                    </p>
+                  )}
                 </div>
               </div>
 
