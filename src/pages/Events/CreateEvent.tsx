@@ -20,6 +20,7 @@ export default function CreateEvent() {
   const [selectedSubEvents, setSelectedSubEvents] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
+  const [showConfirmation, setShowConfirmation] = useState(false);
 
   const SUB_EVENTS = [
     { id: "ENTRY TICKET", label: "🎫 ENTRY TICKET", emoji: "🎫" },
@@ -103,42 +104,48 @@ export default function CreateEvent() {
     });
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoading(true);
-    setMessage("");
-
-    // Validate all required fields
+  const validateForm = () => {
     if (!formData.name.trim()) {
       setMessage("Event name is required");
-      setLoading(false);
-      return;
+      return false;
     }
     
     if (!formData.place.trim()) {
       setMessage("Venue/Place is required");
-      setLoading(false);
-      return;
+      return false;
     }
     
     if (!formData.address.trim()) {
       setMessage("Address is required");
-      setLoading(false);
-      return;
+      return false;
     }
 
     if (!formData.start_date || !formData.end_date) {
       setMessage("Please select both start and end dates");
-      setLoading(false);
-      return;
+      return false;
     }
     
     // Validate date order
     if (new Date(formData.start_date) >= new Date(formData.end_date)) {
       setMessage("End date must be after start date");
-      setLoading(false);
-      return;
+      return false;
     }
+
+    return true;
+  };
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    setMessage("");
+
+    if (validateForm()) {
+      setShowConfirmation(true);
+    }
+  };
+
+  const confirmCreateEvent = async () => {
+    setShowConfirmation(false);
+    setLoading(true);
 
     try {
       let token = localStorage.getItem("access_token");
@@ -398,6 +405,49 @@ export default function CreateEvent() {
           {/* Additional form sections can be added here */}
         </div>
       </div>
+
+      {/* Confirmation Modal */}
+      {showConfirmation && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white dark:bg-gray-800 rounded-lg p-6 max-w-md w-full mx-4">
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
+              Confirm Event Creation
+            </h3>
+            <div className="space-y-3 mb-6">
+              <p className="text-sm text-gray-600 dark:text-gray-400">
+                <span className="font-medium">Event:</span> {formData.name}
+              </p>
+              <p className="text-sm text-gray-600 dark:text-gray-400">
+                <span className="font-medium">Venue:</span> {formData.place}
+              </p>
+              <p className="text-sm text-gray-600 dark:text-gray-400">
+                <span className="font-medium">Duration:</span> {formData.start_date} to {formData.end_date}
+              </p>
+              {selectedSubEvents.length > 0 && (
+                <p className="text-sm text-gray-600 dark:text-gray-400">
+                  <span className="font-medium">Sub-events:</span> {selectedSubEvents.length} selected
+                </p>
+              )}
+            </div>
+            <div className="flex gap-3">
+              <button
+                onClick={confirmCreateEvent}
+                disabled={loading}
+                className="flex-1 bg-brand-500 hover:bg-brand-600 disabled:bg-brand-300 text-white font-medium py-2.5 px-4 rounded-lg transition-colors"
+              >
+                {loading ? "Creating..." : "Confirm"}
+              </button>
+              <button
+                onClick={() => setShowConfirmation(false)}
+                disabled={loading}
+                className="flex-1 bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 font-medium py-2.5 px-4 rounded-lg transition-colors"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }
