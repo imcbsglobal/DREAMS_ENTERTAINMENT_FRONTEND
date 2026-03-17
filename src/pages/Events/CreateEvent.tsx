@@ -355,6 +355,22 @@ export default function CreateEvent() {
                       <span className="text-sm font-medium text-gray-700 dark:text-gray-300">{subEvent.label}</span>
                     </label>
                   ))}
+                  
+                  {/* Add New Sub Event Option */}
+                  <button
+                    type="button"
+                    onClick={() => navigate("/create-sub-event")}
+                    className="flex items-center gap-3 p-3 rounded-lg border border-dashed border-brand-300 dark:border-brand-700 bg-brand-25 dark:bg-brand-900/10 hover:bg-brand-50 dark:hover:bg-brand-900/20 transition-all cursor-pointer group"
+                  >
+                    <div className="w-4 h-4 flex items-center justify-center">
+                      <svg className="w-3 h-3 text-brand-500 dark:text-brand-400" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+                      </svg>
+                    </div>
+                    <span className="text-sm font-medium text-brand-600 dark:text-brand-400 group-hover:text-brand-700 dark:group-hover:text-brand-300">
+                      Add New Sub Event
+                    </span>
+                  </button>
                 </div>
               </div>
 

@@ -38,7 +38,7 @@ const navItems: NavItem[] = [
       { name: "Create Event", path: "/create-event", pro: false },
       { name: "Ongoing Events", path: "/ongoing-events", pro: false },
       { name: "Entry Type", path: "/create-entry-type", pro: false },
-      // { name: "Create Sub Event", path: "/create-sub-event", pro: false },
+      { name: "Create Sub Event", path: "/create-sub-event", pro: false },
       // { name: "Ticket Customization", path: "/ticket-customization", pro: false },
     ],
   },
