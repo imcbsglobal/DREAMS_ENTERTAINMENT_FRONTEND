@@ -13,6 +13,8 @@ export default function CreateEntryType() {
   const location = useLocation();
   const [events, setEvents] = useState([]);
   const [subEvents, setSubEvents] = useState([]);
+  const [existingEntryTypes, setExistingEntryTypes] = useState([]);
+  const [loadingEntryTypes, setLoadingEntryTypes] = useState(false);
   const [formData, setFormData] = useState({
     event: location.state?.eventId || "",
     sub_event: "",
@@ -62,11 +64,41 @@ export default function CreateEntryType() {
         }
       } else {
         setSubEvents([]);
+        setExistingEntryTypes([]);
       }
     };
 
     fetchSubEvents();
   }, [formData.event]);
+
+  // Fetch existing entry types when sub-event changes
+  useEffect(() => {
+    const fetchExistingEntryTypes = async () => {
+      if (formData.sub_event) {
+        setLoadingEntryTypes(true);
+        console.log('Fetching entry types for sub-event:', formData.sub_event); // Debug log
+        try {
+          const token = localStorage.getItem("access_token");
+          // Fetch entry types for the specific sub-event
+          const response = await axios.get(`https://de.imcbs.com/api/admin/entry-types/${formData.sub_event}/`, {
+            headers: { Authorization: `Bearer ${token}` }
+          });
+          console.log('Entry types response:', response.data); // Debug log
+          setExistingEntryTypes(response.data || []);
+        } catch (err) {
+          console.error("Failed to fetch existing entry types:", err);
+          // Clear entry types on error
+          setExistingEntryTypes([]);
+        } finally {
+          setLoadingEntryTypes(false);
+        }
+      } else {
+        setExistingEntryTypes([]);
+      }
+    };
+
+    fetchExistingEntryTypes();
+  }, [formData.sub_event]);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     const { name, value, type } = e.target;
@@ -221,7 +253,79 @@ export default function CreateEntryType() {
           </div>
         </div>
         <div className="space-y-6">
-          {/* Additional form sections can be added here */}
+          {/* Existing Entry Types Section */}
+          {formData.sub_event && (
+            <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-6">
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
+                Existing Entry Types for Selected Sub-Event
+              </h3>
+              
+              {loadingEntryTypes ? (
+                <div className="flex items-center justify-center py-8">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-brand-500"></div>
+                  <span className="ml-2 text-gray-600 dark:text-gray-400">Loading entry types...</span>
+                </div>
+              ) : existingEntryTypes.length > 0 ? (
+                <div className="space-y-3">
+                  {existingEntryTypes.map((entryType) => (
+                    <div key={entryType.id} className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-700 rounded-lg">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2">
+                          <h4 className="font-medium text-gray-900 dark:text-white">
+                            {entryType.name}
+                          </h4>
+                          <span className={`px-2 py-1 text-xs rounded-full ${
+                            entryType.is_active 
+                              ? "bg-green-100 text-green-800 dark:bg-green-900/20 dark:text-green-400"
+                              : "bg-red-100 text-red-800 dark:bg-red-900/20 dark:text-red-400"
+                          }`}>
+                            {entryType.is_active ? "Active" : "Inactive"}
+                          </span>
+                        </div>
+                        <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
+                          Price: ${entryType.price}
+                          {entryType.description && (
+                            <span className="ml-2">• {entryType.description}</span>
+                          )}
+                        </p>
+                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                          Event: {entryType.event_name} • Sub-Event: {entryType.sub_event_name}
+                        </p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-center py-8">
+                  <div className="text-gray-400 dark:text-gray-500 mb-2">
+                    <svg className="mx-auto h-12 w-12" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                    </svg>
+                  </div>
+                  <p className="text-gray-500 dark:text-gray-400">
+                    No entry types found for this sub-event
+                  </p>
+                  <p className="text-sm text-gray-400 dark:text-gray-500 mt-1">
+                    Create the first entry type using the form
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
+          
+          {/* Helper text when no sub-event selected */}
+          {formData.event && !formData.sub_event && (
+            <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
+              <div className="flex items-center gap-2">
+                <svg className="w-5 h-5 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <p className="text-sm text-blue-700 dark:text-blue-300">
+                  Select a sub-event to view existing entry types
+                </p>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </>
