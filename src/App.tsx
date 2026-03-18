@@ -26,6 +26,7 @@ import EditEvent from "./pages/Events/EditEvent";
 // import TicketCustomization from "./pages/Events/TicketCustomization";
 import CreateStaff from "./pages/Staff/CreateStaff";
 import ListStaff from "./pages/Staff/ListStaff";
+import EditStaff from "./pages/Staff/EditStaff";
 import AssignSubEvents from "./pages/Staff/AssignSubEvents";
 import TicketRevenueReport from "./pages/Reports/TicketRevenueReport";
 import StaffReport from "./pages/Reports/StaffReport";
@@ -56,6 +57,7 @@ export default function App() {
             {/* Staff */}
             <Route path="/create-staff" element={<CreateStaff />} />
             <Route path="/list-staff" element={<ListStaff />} />
+            <Route path="/edit-staff" element={<EditStaff />} />
             <Route path="/assign-event-staff" element={<AssignSubEvents />} />
 
             {/* Reports */}

@@ -4,11 +4,27 @@ import axios from "axios";
 import PageMeta from "../../components/common/PageMeta";
 import PageBreadcrumb from "../../components/common/PageBreadCrumb";
 import ComponentCard from "../../components/common/ComponentCard";
+import ConfirmDialog from "../../components/ui/ConfirmDialog";
+import Toast from "../../components/ui/Toast";
 
 export default function ListStaff() {
   const navigate = useNavigate();
   const [staff, setStaff] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [deleteLoading, setDeleteLoading] = useState<number | null>(null);
+  
+  // Dialog and Toast states
+  const [confirmDialog, setConfirmDialog] = useState<{
+    isOpen: boolean;
+    staffId: number | null;
+    staffName: string;
+  }>({ isOpen: false, staffId: null, staffName: "" });
+  
+  const [toast, setToast] = useState<{
+    isVisible: boolean;
+    message: string;
+    type: "success" | "error" | "info";
+  }>({ isVisible: false, message: "", type: "info" });
 
   useEffect(() => {
     const fetchStaff = async () => {
@@ -27,6 +43,43 @@ export default function ListStaff() {
 
     fetchStaff();
   }, []);
+
+  const showToast = (message: string, type: "success" | "error" | "info") => {
+    setToast({ isVisible: true, message, type });
+  };
+
+  const handleDeleteStaff = async (staffId: number, staffName: string) => {
+    setConfirmDialog({ isOpen: true, staffId, staffName });
+  };
+
+  const handleEditStaff = (staffId: number) => {
+    navigate("/edit-staff", { state: { staffId } });
+  };
+
+  const confirmDelete = async () => {
+    const { staffId, staffName } = confirmDialog;
+    if (!staffId) return;
+
+    setConfirmDialog({ isOpen: false, staffId: null, staffName: "" });
+    setDeleteLoading(staffId);
+    
+    try {
+      const token = localStorage.getItem("access_token");
+      await axios.delete(`https://de.imcbs.com/api/admin/delete-staff/${staffId}/`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      
+      // Remove staff from state
+      setStaff(staff.filter((member: any) => member.id !== staffId));
+      showToast(`Staff member "${staffName}" deleted successfully!`, "success");
+    } catch (err: any) {
+      const errorMessage = err.response?.data?.error || err.response?.data?.message || "Failed to delete staff member";
+      showToast(errorMessage, "error");
+      console.error("Failed to delete staff:", err);
+    } finally {
+      setDeleteLoading(null);
+    }
+  };
 
   if (loading) {
     return (
@@ -121,11 +174,63 @@ export default function ListStaff() {
                     <span>Counter: {member.current_counter}</span>
                   </div>
                 </div>
+                
+                <div className="flex gap-2 pt-4">
+                  <button 
+                    className="bg-gray-100 hover:bg-gray-200 dark:bg-gray-800 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 p-2 rounded-lg transition-colors"
+                    onClick={() => handleEditStaff(member.id)}
+                    title="Edit Staff"
+                  >
+                    <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+                      <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+                    </svg>
+                  </button>
+                  <button 
+                    className="bg-red-100 hover:bg-red-200 dark:bg-red-900/20 dark:hover:bg-red-900/30 text-red-600 dark:text-red-400 p-2 rounded-lg transition-colors disabled:opacity-50"
+                    onClick={() => handleDeleteStaff(member.id, `${member.user.first_name} ${member.user.last_name}`)}
+                    disabled={deleteLoading === member.id}
+                    title="Delete Staff"
+                  >
+                    {deleteLoading === member.id ? (
+                      <svg className="w-5 h-5 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <path d="M21 12a9 9 0 1 1-6.219-8.56" />
+                      </svg>
+                    ) : (
+                      <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <polyline points="3 6 5 6 21 6" />
+                        <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                        <line x1="10" y1="11" x2="10" y2="17" />
+                        <line x1="14" y1="11" x2="14" y2="17" />
+                      </svg>
+                    )}
+                  </button>
+                </div>
               </div>
             </ComponentCard>
           ))}
         </div>
       )}
+      
+      {/* Confirm Dialog */}
+      <ConfirmDialog
+        isOpen={confirmDialog.isOpen}
+        onClose={() => setConfirmDialog({ isOpen: false, staffId: null, staffName: "" })}
+        onConfirm={confirmDelete}
+        title="Delete Staff Member"
+        message={`Are you sure you want to delete "${confirmDialog.staffName}"?\n\nThis will permanently delete:\n• The staff member\n• All assigned tickets\n• All related data\n\nThis action CANNOT be undone!`}
+        confirmText="Delete Staff"
+        cancelText="Cancel"
+        type="danger"
+      />
+      
+      {/* Toast Notifications */}
+      <Toast
+        isVisible={toast.isVisible}
+        message={toast.message}
+        type={toast.type}
+        onClose={() => setToast({ ...toast, isVisible: false })}
+      />
     </>
   );
 }

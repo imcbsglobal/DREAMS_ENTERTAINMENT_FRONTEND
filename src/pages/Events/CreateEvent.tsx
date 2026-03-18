@@ -31,8 +31,8 @@ export default function CreateEvent() {
     { id: "Ranger", label: "🤠 Ranger", emoji: "🤠" },
     { id: "Dragon train", label: "🐉 Dragon train", emoji: "🐉" },
     { id: "Bouncy", label: "🏀 Bouncy", emoji: "🏀" },
-    { id: "Toy car", label: "🚗 Toy car", emoji: "🚗" },
-    { id: "Toy helicopter", label: "🚁 Toy helicopter", emoji: "🚁" },
+    { id: "Toy car", label: "🚗 Toy Car", emoji: "🚗" },
+    { id: "Toy Helicopter", label: "🚁 Toy Helicopter", emoji: "🚁" },
     { id: "Toy Boat", label: "⛵ Toy Boat", emoji: "⛵" }
   ];
 
