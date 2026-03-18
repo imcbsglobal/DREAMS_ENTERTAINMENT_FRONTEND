@@ -18,25 +18,13 @@ export default function CreateEvent() {
     end_date: ""
   });
   const [selectedSubEvents, setSelectedSubEvents] = useState<string[]>([]);
+  const [availableSubEvents, setAvailableSubEvents] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
+  const [loadingSubEvents, setLoadingSubEvents] = useState(true);
   const [message, setMessage] = useState("");
   const [showConfirmation, setShowConfirmation] = useState(false);
 
-  const SUB_EVENTS = [
-    { id: "ENTRY TICKET", label: "🎫 ENTRY TICKET", emoji: "🎫" },
-    { id: "Giant wheel", label: "🎡 Giant wheel", emoji: "🎡" },
-    { id: "Break dance", label: "💃 Break dance", emoji: "💃" },
-    { id: "Colombus", label: "🚢 Colombus", emoji: "🚢" },
-    { id: "Well of death", label: "💀 Well of death", emoji: "💀" },
-    { id: "Ranger", label: "🤠 Ranger", emoji: "🤠" },
-    { id: "Dragon train", label: "🐉 Dragon train", emoji: "🐉" },
-    { id: "Bouncy", label: "🏀 Bouncy", emoji: "🏀" },
-    { id: "Toy car", label: "🚗 Toy Car", emoji: "🚗" },
-    { id: "Toy Helicopter", label: "🚁 Toy Helicopter", emoji: "🚁" },
-    { id: "Toy Boat", label: "⛵ Toy Boat", emoji: "⛵" }
-  ];
-
-  // Check authentication on component mount
+  // Check authentication and load sub-events on component mount
   useEffect(() => {
     const token = localStorage.getItem("access_token");
     console.log("=== COMPONENT MOUNT CHECK ===");
@@ -47,8 +35,39 @@ export default function CreateEvent() {
       console.log("No token found, redirecting to signin");
       setMessage("Please login to access this page");
       setTimeout(() => navigate("/signin"), 2000);
+    } else {
+      loadPredefinedSubEvents();
     }
   }, [navigate]);
+
+  // Load predefined sub-events from backend
+  const loadPredefinedSubEvents = async () => {
+    try {
+      setLoadingSubEvents(true);
+      const token = localStorage.getItem("access_token");
+      
+      const response = await axios.get("https://de.imcbs.com/api/admin/master-sub-events/", {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      
+      console.log("=== MASTER SUB-EVENTS LOADED ===");
+      console.log("Master sub-events data:", response.data);
+      
+      // Filter active sub-events and extract names
+      const activeSubEvents = response.data
+        .filter(item => item.is_active)
+        .map(item => item.name);
+      
+      console.log("Available active sub-events:", activeSubEvents);
+      setAvailableSubEvents(activeSubEvents);
+    } catch (error: any) {
+      console.error("Failed to load master sub-events:", error);
+      setMessage("Failed to load available activities. Please contact administrator.");
+      setAvailableSubEvents([]);
+    } finally {
+      setLoadingSubEvents(false);
+    }
+  };
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
@@ -320,65 +339,88 @@ export default function CreateEvent() {
                   <div className="flex gap-2">
                     <button
                       type="button"
-                      onClick={() => setSelectedSubEvents(SUB_EVENTS.map(se => se.id))}
-                      className="text-xs bg-green-500 hover:bg-green-600 text-white px-3 py-1 rounded-lg transition-colors"
+                      onClick={() => setSelectedSubEvents([...availableSubEvents])}
+                      disabled={loadingSubEvents}
+                      className="text-xs bg-green-500 hover:bg-green-600 disabled:bg-green-300 text-white px-3 py-1 rounded-lg transition-colors"
                     >
                       Select All
                     </button>
                     <button
                       type="button"
                       onClick={() => setSelectedSubEvents([])}
-                      className="text-xs bg-red-500 hover:bg-red-600 text-white px-3 py-1 rounded-lg transition-colors"
+                      disabled={loadingSubEvents}
+                      className="text-xs bg-red-500 hover:bg-red-600 disabled:bg-red-300 text-white px-3 py-1 rounded-lg transition-colors"
                     >
                       Clear All
+                    </button>
+                    <button
+                      type="button"
+                      onClick={loadPredefinedSubEvents}
+                      disabled={loadingSubEvents}
+                      className="text-xs bg-blue-500 hover:bg-blue-600 disabled:bg-blue-300 text-white px-3 py-1 rounded-lg transition-colors"
+                    >
+                      {loadingSubEvents ? "Loading..." : "Refresh"}
                     </button>
                   </div>
                 </div>
                 <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">
                   Choose which activities/rides to include in this event. If none selected, default 'ENTRY TICKET' will be created.
                 </p>
-                <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-                  {SUB_EVENTS.map((subEvent) => (
-                    <label
-                      key={subEvent.id}
-                      className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-all ${
-                        selectedSubEvents.includes(subEvent.id)
-                          ? "bg-brand-50 dark:bg-brand-900/20 border-brand-500 dark:border-brand-700"
-                          : "bg-gray-50 dark:bg-gray-800 border-gray-200 dark:border-gray-700 hover:border-brand-300 dark:hover:border-brand-800"
-                      }`}
+                
+                {loadingSubEvents ? (
+                  <div className="flex items-center justify-center p-8">
+                    <div className="text-gray-500 dark:text-gray-400">Loading available activities...</div>
+                  </div>
+                ) : availableSubEvents.length === 0 ? (
+                  <div className="text-center p-8 text-gray-500 dark:text-gray-400">
+                    <p>No activities available. Please contact administrator.</p>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                    {availableSubEvents.map((subEventName) => (
+                      <label
+                        key={subEventName}
+                        className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-all ${
+                          selectedSubEvents.includes(subEventName)
+                            ? "bg-brand-50 dark:bg-brand-900/20 border-brand-500 dark:border-brand-700"
+                            : "bg-gray-50 dark:bg-gray-800 border-gray-200 dark:border-gray-700 hover:border-brand-300 dark:hover:border-brand-800"
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={selectedSubEvents.includes(subEventName)}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setSelectedSubEvents(prev => [...prev, subEventName]);
+                            } else {
+                              setSelectedSubEvents(prev => prev.filter(name => name !== subEventName));
+                            }
+                          }}
+                          className="w-4 h-4 text-brand-500 border-gray-300 dark:border-gray-600 rounded focus:ring-brand-500 focus:ring-2"
+                        />
+                        <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                          {subEventName}
+                        </span>
+                      </label>
+                    ))}
+                    
+                    {/* Add New Sub Event Option */}
+                    <button
+                      type="button"
+                      onClick={() => navigate("/manage-sub-event")}
+                      className="flex items-center gap-3 p-3 rounded-lg border border-dashed border-brand-300 dark:border-brand-700 bg-brand-25 dark:bg-brand-900/10 hover:bg-brand-50 dark:hover:bg-brand-900/20 transition-all cursor-pointer group"
                     >
-                      <input
-                        type="checkbox"
-                        checked={selectedSubEvents.includes(subEvent.id)}
-                        onChange={(e) => {
-                          if (e.target.checked) {
-                            setSelectedSubEvents(prev => [...prev, subEvent.id]);
-                          } else {
-                            setSelectedSubEvents(prev => prev.filter(id => id !== subEvent.id));
-                          }
-                        }}
-                        className="w-4 h-4 text-brand-500 border-gray-300 dark:border-gray-600 rounded focus:ring-brand-500 focus:ring-2"
-                      />
-                      <span className="text-sm font-medium text-gray-700 dark:text-gray-300">{subEvent.label}</span>
-                    </label>
-                  ))}
-                  
-                  {/* Add New Sub Event Option */}
-                  <button
-                    type="button"
-                    onClick={() => navigate("/create-sub-event")}
-                    className="flex items-center gap-3 p-3 rounded-lg border border-dashed border-brand-300 dark:border-brand-700 bg-brand-25 dark:bg-brand-900/10 hover:bg-brand-50 dark:hover:bg-brand-900/20 transition-all cursor-pointer group"
-                  >
-                    <div className="w-4 h-4 flex items-center justify-center">
-                      <svg className="w-3 h-3 text-brand-500 dark:text-brand-400" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
-                      </svg>
-                    </div>
-                    <span className="text-sm font-medium text-brand-600 dark:text-brand-400 group-hover:text-brand-700 dark:group-hover:text-brand-300">
-                      Add New Sub Event
-                    </span>
-                  </button>
-                </div>
+                      <div className="w-4 h-4 flex items-center justify-center">
+                        <svg className="w-3 h-3 text-brand-500 dark:text-brand-400" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+                        </svg>
+                      </div>
+                      <span className="text-sm font-medium text-brand-600 dark:text-brand-400 group-hover:text-brand-700 dark:group-hover:text-brand-300">
+                        Manage Activities
+                      </span>
+                    </button>
+                  </div>
+                )}
               </div>
 
               <div className="flex gap-4 pt-4">

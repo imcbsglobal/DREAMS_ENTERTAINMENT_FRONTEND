@@ -51,6 +51,13 @@ const navItems: NavItem[] = [
       { name: "Assign Event to Staff", path: "/assign-event-staff", pro: false },
     ],
   },
+  {
+    icon: <ListIcon />,
+    name: "Event Master Management",
+    subItems: [
+      { name: "Manage Sub Event", path: "/manage-sub-event", pro: false },
+    ],
+  },
 ];
 
 const othersItems: NavItem[] = [

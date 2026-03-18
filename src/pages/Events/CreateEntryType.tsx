@@ -283,7 +283,7 @@ export default function CreateEntryType() {
                           </span>
                         </div>
                         <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
-                          Price: ${entryType.price}
+                          Price: ₹{entryType.price}
                           {entryType.description && (
                             <span className="ml-2">• {entryType.description}</span>
                           )}
