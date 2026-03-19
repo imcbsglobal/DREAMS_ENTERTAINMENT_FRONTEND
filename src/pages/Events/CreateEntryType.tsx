@@ -24,6 +24,16 @@ export default function CreateEntryType() {
   });
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
+  const [editingEntryType, setEditingEntryType] = useState(null);
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [deletingEntryType, setDeletingEntryType] = useState(null);
+  const [editFormData, setEditFormData] = useState({
+    name: "",
+    price: "",
+    description: "",
+    is_active: true
+  });
 
   useEffect(() => {
     const fetchEvents = async () => {
@@ -73,30 +83,6 @@ export default function CreateEntryType() {
 
   // Fetch existing entry types when sub-event changes
   useEffect(() => {
-    const fetchExistingEntryTypes = async () => {
-      if (formData.sub_event) {
-        setLoadingEntryTypes(true);
-        console.log('Fetching entry types for sub-event:', formData.sub_event); // Debug log
-        try {
-          const token = localStorage.getItem("access_token");
-          // Fetch entry types for the specific sub-event
-          const response = await axios.get(`https://de.imcbs.com/api/admin/entry-types/${formData.sub_event}/`, {
-            headers: { Authorization: `Bearer ${token}` }
-          });
-          console.log('Entry types response:', response.data); // Debug log
-          setExistingEntryTypes(response.data || []);
-        } catch (err) {
-          console.error("Failed to fetch existing entry types:", err);
-          // Clear entry types on error
-          setExistingEntryTypes([]);
-        } finally {
-          setLoadingEntryTypes(false);
-        }
-      } else {
-        setExistingEntryTypes([]);
-      }
-    };
-
     fetchExistingEntryTypes();
   }, [formData.sub_event]);
 
@@ -123,12 +109,145 @@ export default function CreateEntryType() {
         headers: { Authorization: `Bearer ${token}` }
       });
       setMessage("success");
+      // Refresh the existing entry types list
+      if (formData.sub_event) {
+        fetchExistingEntryTypes();
+      }
       setTimeout(() => navigate("/ongoing-events"), 1500);
     } catch (err: any) {
       setMessage(err.response?.data?.error || "Failed to create entry type");
     } finally {
       setLoading(false);
     }
+  };
+
+  const fetchExistingEntryTypes = async () => {
+    if (formData.sub_event) {
+      setLoadingEntryTypes(true);
+      try {
+        const token = localStorage.getItem("access_token");
+        const response = await axios.get(`https://de.imcbs.com/api/admin/entry-types/${formData.sub_event}/`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        
+        // Check if each entry type is in use (has sold tickets)
+        const entryTypesWithUsageStatus = await Promise.all(
+          (response.data || []).map(async (entryType) => {
+            try {
+              // Try to get details for this entry type to check if it's in use
+              const detailResponse = await axios.get(`https://de.imcbs.com/api/admin/entry-type/${entryType.id}/`, {
+                headers: { Authorization: `Bearer ${token}` }
+              });
+              
+              // Check if entry type has tickets sold or is otherwise in use
+              const isInUse = detailResponse.data.tickets_sold > 0 || 
+                             detailResponse.data.is_in_use || 
+                             detailResponse.data.has_bookings;
+              
+              return {
+                ...entryType,
+                is_in_use: isInUse,
+                tickets_sold: detailResponse.data.tickets_sold || 0
+              };
+            } catch (err) {
+              // If we can't get details, assume it's safe to edit/delete
+              return {
+                ...entryType,
+                is_in_use: false,
+                tickets_sold: 0
+              };
+            }
+          })
+        );
+        
+        setExistingEntryTypes(entryTypesWithUsageStatus);
+      } catch (err) {
+        console.error("Failed to fetch existing entry types:", err);
+        setExistingEntryTypes([]);
+      } finally {
+        setLoadingEntryTypes(false);
+      }
+    }
+  };
+
+  const handleEditEntryType = (entryType) => {
+    setEditingEntryType(entryType);
+    setEditFormData({
+      name: entryType.name,
+      price: entryType.price.toString(),
+      description: entryType.description || "",
+      is_active: entryType.is_active
+    });
+    setShowEditModal(true);
+  };
+
+  const handleUpdateEntryType = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingEntryType) return;
+
+    setLoading(true);
+    try {
+      const token = localStorage.getItem("access_token");
+      const updateData = {
+        name: editFormData.name,
+        price: parseFloat(editFormData.price),
+        description: editFormData.description,
+        is_active: editFormData.is_active
+      };
+
+      await axios.put(`https://de.imcbs.com/api/admin/entry-type/${editingEntryType.id}/update/`, updateData, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+
+      setMessage("Entry type updated successfully!");
+      setShowEditModal(false);
+      setEditingEntryType(null);
+      fetchExistingEntryTypes();
+      
+      setTimeout(() => setMessage(""), 3000);
+    } catch (err: any) {
+      setMessage(err.response?.data?.error || "Failed to update entry type");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDeleteEntryType = async () => {
+    if (!deletingEntryType) return;
+
+    setLoading(true);
+    try {
+      const token = localStorage.getItem("access_token");
+      await axios.delete(`https://de.imcbs.com/api/admin/entry-type/${deletingEntryType.id}/delete/`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+
+      setMessage("Entry type deleted successfully!");
+      setShowDeleteModal(false);
+      setDeletingEntryType(null);
+      fetchExistingEntryTypes();
+      
+      setTimeout(() => setMessage(""), 3000);
+    } catch (err: any) {
+      setMessage(err.response?.data?.error || "Failed to delete entry type");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDeleteClick = (entryType) => {
+    setDeletingEntryType(entryType);
+    setShowDeleteModal(true);
+  };
+
+  const handleEditInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+    const { name, value, type } = e.target;
+    const checked = (e.target as HTMLInputElement).checked;
+    
+    setEditFormData(prev => ({
+      ...prev,
+      [name]: type === "checkbox" ? checked : value
+    }));
   };
 
   return (
@@ -267,7 +386,11 @@ export default function CreateEntryType() {
                 </div>
               ) : existingEntryTypes.length > 0 ? (
                 <div className="space-y-3">
-                  {existingEntryTypes.map((entryType) => (
+                  {existingEntryTypes.map((entryType) => {
+                    const isInUse = entryType.is_in_use || false;
+                    const ticketsSold = entryType.tickets_sold || 0;
+                    
+                    return (
                     <div key={entryType.id} className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-700 rounded-lg">
                       <div className="flex-1">
                         <div className="flex items-center gap-2">
@@ -281,9 +404,17 @@ export default function CreateEntryType() {
                           }`}>
                             {entryType.is_active ? "Active" : "Inactive"}
                           </span>
+                          {isInUse && (
+                            <span className="px-2 py-1 text-xs rounded-full bg-orange-100 text-orange-800 dark:bg-orange-900/20 dark:text-orange-400">
+                              In Use
+                            </span>
+                          )}
                         </div>
                         <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
                           Price: ₹{entryType.price}
+                          {ticketsSold > 0 && (
+                            <span className="ml-2 text-orange-600 dark:text-orange-400">• {ticketsSold} tickets sold</span>
+                          )}
                           {entryType.description && (
                             <span className="ml-2">• {entryType.description}</span>
                           )}
@@ -291,9 +422,44 @@ export default function CreateEntryType() {
                         <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
                           Event: {entryType.event_name} • Sub-Event: {entryType.sub_event_name}
                         </p>
+                        {isInUse && (
+                          <p className="text-xs text-orange-600 dark:text-orange-400 mt-1 italic">
+                            Cannot edit or delete - entry type is in use
+                          </p>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2 ml-4">
+                        <button
+                          onClick={() => handleEditEntryType(entryType)}
+                          disabled={loading || isInUse}
+                          className={`p-2 rounded-lg transition-colors ${
+                            isInUse 
+                              ? "text-gray-400 dark:text-gray-600 cursor-not-allowed opacity-50" 
+                              : "text-blue-600 hover:text-blue-800 hover:bg-blue-50 dark:text-blue-400 dark:hover:text-blue-300 dark:hover:bg-blue-900/20 disabled:opacity-50 disabled:cursor-not-allowed"
+                          }`}
+                          title={isInUse ? "Cannot edit - entry type is in use" : "Edit entry type"}
+                        >
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                          </svg>
+                        </button>
+                        <button
+                          onClick={() => handleDeleteClick(entryType)}
+                          disabled={loading || isInUse}
+                          className={`p-2 rounded-lg transition-colors ${
+                            isInUse 
+                              ? "text-gray-400 dark:text-gray-600 cursor-not-allowed opacity-50" 
+                              : "text-red-600 hover:text-red-800 hover:bg-red-50 dark:text-red-400 dark:hover:text-red-300 dark:hover:bg-red-900/20 disabled:opacity-50 disabled:cursor-not-allowed"
+                          }`}
+                          title={isInUse ? "Cannot delete - entry type is in use" : "Delete entry type"}
+                        >
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                          </svg>
+                        </button>
                       </div>
                     </div>
-                  ))}
+                  )})}
                 </div>
               ) : (
                 <div className="text-center py-8">
@@ -328,6 +494,175 @@ export default function CreateEntryType() {
           )}
         </div>
       </div>
+
+      {/* Delete Confirmation Modal */}
+      {showDeleteModal && deletingEntryType && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-6 w-full max-w-md">
+            <div className="flex items-center justify-center mb-4">
+              <div className="w-12 h-12 rounded-full bg-red-100 dark:bg-red-900/20 flex items-center justify-center">
+                <svg className="w-6 h-6 text-red-600 dark:text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z" />
+                </svg>
+              </div>
+            </div>
+            
+            <div className="text-center mb-6">
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">
+                Delete Entry Type
+              </h3>
+              <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
+                Are you sure you want to delete <span className="font-medium text-gray-900 dark:text-white">"{deletingEntryType.name}"</span>?
+              </p>
+              <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-3 text-left">
+                <div className="text-xs text-gray-500 dark:text-gray-400 space-y-1">
+                  <div>Price: ₹{deletingEntryType.price}</div>
+                  <div>Event: {deletingEntryType.event_name}</div>
+                  <div>Sub-Event: {deletingEntryType.sub_event_name}</div>
+                  <div>Status: {deletingEntryType.is_active ? "Active" : "Inactive"}</div>
+                  {deletingEntryType.tickets_sold > 0 && (
+                    <div className="text-orange-600 dark:text-orange-400 font-medium">
+                      Tickets Sold: {deletingEntryType.tickets_sold}
+                    </div>
+                  )}
+                </div>
+              </div>
+              <p className="text-xs text-red-600 dark:text-red-400 mt-3">
+                This action cannot be undone.
+              </p>
+            </div>
+
+            <div className="flex gap-3">
+              <button
+                onClick={() => {
+                  setShowDeleteModal(false);
+                  setDeletingEntryType(null);
+                }}
+                disabled={loading}
+                className="flex-1 bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 font-medium py-2.5 px-4 rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-gray-500/20 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleDeleteEntryType}
+                disabled={loading}
+                className="flex-1 bg-red-600 hover:bg-red-700 disabled:bg-red-400 text-white font-medium py-2.5 px-4 rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-red-500/20 disabled:cursor-not-allowed"
+              >
+                {loading ? (
+                  <span className="flex items-center justify-center gap-2">
+                    <svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    Deleting...
+                  </span>
+                ) : (
+                  "Delete Entry Type"
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Modal */}
+      {showEditModal && editingEntryType && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-6 w-full max-w-md max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+                Edit Entry Type
+              </h3>
+              <button
+                onClick={() => {
+                  setShowEditModal(false);
+                  setEditingEntryType(null);
+                }}
+                className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+              >
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            <form onSubmit={handleUpdateEntryType} className="space-y-4">
+              <div>
+                <Label htmlFor="editName">Entry Type Name *</Label>
+                <Input
+                  type="text"
+                  id="editName"
+                  name="name"
+                  value={editFormData.name}
+                  onChange={handleEditInputChange}
+                  placeholder="e.g., Adult, Kids, VIP"
+                  required
+                  disabled={loading}
+                />
+              </div>
+
+              <div>
+                <Label htmlFor="editPrice">Price *</Label>
+                <Input
+                  type="number"
+                  step="0.01"
+                  id="editPrice"
+                  name="price"
+                  value={editFormData.price}
+                  onChange={handleEditInputChange}
+                  placeholder="0.00"
+                  required
+                  disabled={loading}
+                />
+              </div>
+
+              <div>
+                <Label htmlFor="editDescription">Description</Label>
+                <textarea
+                  id="editDescription"
+                  name="description"
+                  value={editFormData.description}
+                  onChange={handleEditInputChange}
+                  placeholder="Optional description"
+                  disabled={loading}
+                  rows={3}
+                  className="w-full rounded-lg border appearance-none px-4 py-2.5 text-sm shadow-theme-xs placeholder:text-gray-400 focus:outline-hidden focus:ring-3 dark:bg-gray-900 dark:text-white/90 dark:placeholder:text-white/30 bg-transparent text-gray-800 border-gray-300 focus:border-brand-300 focus:ring-brand-500/20 dark:border-gray-700 dark:focus:border-brand-800 resize-none"
+                />
+              </div>
+
+              <div className="flex items-center gap-3">
+                <Checkbox
+                  checked={editFormData.is_active}
+                  onChange={(checked) => setEditFormData(prev => ({ ...prev, is_active: checked }))}
+                  disabled={loading}
+                />
+                <Label>Active</Label>
+              </div>
+
+              <div className="flex gap-3 pt-4">
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="flex-1 bg-brand-500 hover:bg-brand-600 disabled:bg-brand-300 text-white font-medium py-2.5 px-4 rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-brand-500/20"
+                >
+                  {loading ? "Updating..." : "Update Entry Type"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowEditModal(false);
+                    setEditingEntryType(null);
+                  }}
+                  disabled={loading}
+                  className="flex-1 bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 font-medium py-2.5 px-4 rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-gray-500/20"
+                >
+                  Cancel
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </>
   );
 }

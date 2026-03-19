@@ -58,6 +58,54 @@ export default function EditEvent() {
     }
   };
 
+  const fetchEvent = async () => {
+    try {
+      const token = localStorage.getItem("access_token");
+      
+      // Fetch event details
+      const response = await axios.get(`https://de.imcbs.com/api/admin/event-list/`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      
+      const event = response.data.find(e => e.id === parseInt(eventId));
+      if (!event) {
+        setMessage("Event not found");
+        return;
+      }
+      
+      setFormData({
+        name: event.name || "",
+        place: event.place || "",
+        address: event.address || "",
+        start_date: event.start_date || "",
+        end_date: event.end_date || ""
+      });
+
+      // Fetch current sub-events for this event
+      try {
+        console.log('Fetching sub-events for event ID:', eventId);
+        const subEventsResponse = await axios.get(`https://de.imcbs.com/api/admin/sub-events/${eventId}/`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        
+        console.log('Sub-events API response:', subEventsResponse.data);
+        const currentSubEventNames = subEventsResponse.data.map(se => se.name);
+        console.log('Current sub-event names from API:', currentSubEventNames);
+        
+        setCurrentSubEvents(currentSubEventNames);
+        setSelectedSubEvents(currentSubEventNames); // Pre-select current sub-events
+      } catch (subEventError) {
+        console.log("Error fetching sub-events:", subEventError);
+        console.log("Sub-event error response:", subEventError.response?.data);
+        setCurrentSubEvents([]);
+        setSelectedSubEvents([]);
+      }
+      
+    } catch (err: any) {
+      setMessage(err.response?.data?.error || "Failed to fetch event details");
+    }
+  };
+
   useEffect(() => {
     if (!eventId) {
       setMessage("No event ID provided");
@@ -65,73 +113,26 @@ export default function EditEvent() {
       return;
     }
 
-    // Load both event details and available sub-events
+    // Load data sequentially to avoid race conditions
     const initializeData = async () => {
-      await Promise.all([
-        fetchEvent(),
-        loadPredefinedSubEvents()
-      ]);
-    };
-
-    initializeData();
-  }, [eventId]);
-
-  const fetchEvent = async () => {
       try {
-        const token = localStorage.getItem("access_token");
-        
-        // Fetch event details
-        const response = await axios.get(`https://de.imcbs.com/api/admin/event-list/`, {
-          headers: { Authorization: `Bearer ${token}` }
-        });
-        
-        const event = response.data.find(e => e.id === parseInt(eventId));
-        if (!event) {
-          setMessage("Event not found");
-          setFetchingEvent(false);
-          return;
-        }
-        
-        setFormData({
-          name: event.name || "",
-          place: event.place || "",
-          address: event.address || "",
-          start_date: event.start_date || "",
-          end_date: event.end_date || ""
-        });
-
-        // Fetch current sub-events for this event
-        try {
-          console.log('Fetching sub-events for event ID:', eventId);
-          const subEventsResponse = await axios.get(`https://de.imcbs.com/api/admin/sub-events/${eventId}/`, {
-            headers: { Authorization: `Bearer ${token}` }
-          });
-          
-          console.log('Sub-events API response:', subEventsResponse.data);
-          const currentSubEventNames = subEventsResponse.data.map(se => se.name);
-          console.log('Current sub-event names from API:', currentSubEventNames);
-          
-          setCurrentSubEvents(currentSubEventNames);
-          setSelectedSubEvents(currentSubEventNames); // Pre-select current sub-events
-        } catch (subEventError) {
-          console.log("Error fetching sub-events:", subEventError);
-          console.log("Sub-event error response:", subEventError.response?.data);
-          setCurrentSubEvents([]);
-          setSelectedSubEvents([]);
-        }
-        
-      } catch (err: any) {
-        setMessage(err.response?.data?.error || "Failed to fetch event details");
+        // First load available sub-events
+        await loadPredefinedSubEvents();
+        // Then load event details and current sub-events
+        await fetchEvent();
+      } catch (error) {
+        console.error('Failed to initialize data:', error);
       } finally {
         setFetchingEvent(false);
       }
     };
 
-    fetchEvent();
+    initializeData();
+  }, [eventId]);
 
   // Initialize date pickers after form data is loaded
   useEffect(() => {
-    if (!fetchingEvent && formData.start_date) {
+    if (!fetchingEvent && formData.start_date && formData.end_date) {
       // Initialize start date picker
       const startDatePicker = flatpickr("#start_date", {
         dateFormat: "Y-m-d",
@@ -154,13 +155,21 @@ export default function EditEvent() {
       // Update end date picker's minDate when start date changes
       const startInput = document.getElementById("start_date") as HTMLInputElement;
       if (startInput) {
-        startInput.addEventListener('change', (e) => {
+        const handleStartDateChange = (e: Event) => {
           const target = e.target as HTMLInputElement;
           endDatePicker.set('minDate', target.value);
-        });
+        };
+        startInput.addEventListener('change', handleStartDateChange);
+        
+        // Cleanup function
+        return () => {
+          startInput.removeEventListener('change', handleStartDateChange);
+          startDatePicker.destroy();
+          endDatePicker.destroy();
+        };
       }
 
-      // Cleanup function
+      // Cleanup function if startInput is not found
       return () => {
         startDatePicker.destroy();
         endDatePicker.destroy();
