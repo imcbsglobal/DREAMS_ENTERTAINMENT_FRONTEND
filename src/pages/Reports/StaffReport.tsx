@@ -174,7 +174,6 @@ export default function StaffReport() {
                       <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Staff</th>
                       <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Role</th>
                       <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Range</th>
-                      <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Current</th>
                       <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Generated</th>
                       <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Remaining</th>
                       <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Revenue</th>
@@ -203,11 +202,6 @@ export default function StaffReport() {
                         </td>
                         <td className="px-4 py-3 text-center text-gray-600 dark:text-gray-400">
                           <div className="text-xs">{staff.range_start} - {staff.range_end}</div>
-                        </td>
-                        <td className="px-4 py-3 text-center">
-                          <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200">
-                            {staff.current_counter}
-                          </span>
                         </td>
                         <td className="px-4 py-3 text-center font-semibold text-blue-600 dark:text-blue-400">
                           {staff.tickets_generated}

@@ -4,6 +4,7 @@ import axios from "axios";
 import PageMeta from "../../components/common/PageMeta";
 import PageBreadcrumb from "../../components/common/PageBreadCrumb";
 import ComponentCard from "../../components/common/ComponentCard";
+import SuccessPopup from "../../components/common/SuccessPopup";
 import Label from "../../components/form/Label";
 import Input from "../../components/form/input/InputField";
 import DatePicker from "../../components/form/date-picker";
@@ -23,6 +24,7 @@ export default function CreateEvent() {
   const [loadingSubEvents, setLoadingSubEvents] = useState(true);
   const [message, setMessage] = useState("");
   const [showConfirmation, setShowConfirmation] = useState(false);
+  const [showSuccessPopup, setShowSuccessPopup] = useState(false);
 
   // Check authentication and load sub-events on component mount
   useEffect(() => {
@@ -188,8 +190,8 @@ export default function CreateEvent() {
         const response = await makeAuthenticatedRequest(token);
         console.log("=== REQUEST SUCCESSFUL ===");
         console.log("Response:", response.data);
-        setMessage("success");
-        setTimeout(() => navigate("/ongoing-events"), 1500);
+        setShowSuccessPopup(true);
+        setTimeout(() => navigate("/ongoing-events"), 3500);
       } catch (err: any) {
         console.log("=== REQUEST FAILED ===");
         console.log("Error status:", err.response?.status);
@@ -205,8 +207,8 @@ export default function CreateEvent() {
             // Retry with new token
             const response = await makeAuthenticatedRequest(newToken);
             console.log("=== RETRY SUCCESSFUL ===");
-            setMessage("success");
-            setTimeout(() => navigate("/ongoing-events"), 1500);
+            setShowSuccessPopup(true);
+            setTimeout(() => navigate("/ongoing-events"), 3500);
           } else {
             console.log("=== TOKEN REFRESH FAILED ===");
             setMessage("Session expired. Please login again.");
@@ -252,13 +254,9 @@ export default function CreateEvent() {
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
         <div className="space-y-6">
           <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-6">
-            {message && (
-              <div className={`p-3 text-sm rounded-lg mb-4 ${
-                message === "success" 
-                  ? "text-green-600 bg-green-50 border border-green-200 dark:bg-green-900/20 dark:border-green-800 dark:text-green-400"
-                  : "text-red-600 bg-red-50 border border-red-200 dark:bg-red-900/20 dark:border-red-800 dark:text-red-400"
-              }`}>
-                {message === "success" ? "Event created successfully!" : message}
+            {message && message !== "success" && (
+              <div className="p-3 text-sm rounded-lg mb-4 text-red-600 bg-red-50 border border-red-200 dark:bg-red-900/20 dark:border-red-800 dark:text-red-400">
+                {message}
               </div>
             )}
             <form onSubmit={handleSubmit} className="space-y-6">
@@ -447,6 +445,19 @@ export default function CreateEvent() {
           {/* Additional form sections can be added here */}
         </div>
       </div>
+
+      {/* Success Popup */}
+      <SuccessPopup
+        isOpen={showSuccessPopup}
+        onClose={() => {
+          setShowSuccessPopup(false);
+          navigate("/ongoing-events");
+        }}
+        title="Event Created Successfully!"
+        message="Your event has been created and is now available in the ongoing events list."
+        autoClose={true}
+        autoCloseDelay={3000}
+      />
 
       {/* Confirmation Modal */}
       {showConfirmation && (

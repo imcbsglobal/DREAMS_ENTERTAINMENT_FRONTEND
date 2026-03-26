@@ -53,9 +53,9 @@ const navItems: NavItem[] = [
   },
   {
     icon: <ListIcon />,
-    name: "Event Master Management",
+    name: "Event/Rides Master",
     subItems: [
-      { name: "Manage Sub Event", path: "/manage-sub-event", pro: false },
+      { name: "Manage Sub Event/Rides", path: "/manage-sub-event", pro: false },
     ],
   },
 ];
@@ -276,7 +276,7 @@ const AppSidebar: React.FC = () => {
       <div className="h-16 flex justify-center items-center pt-2">
         {(isExpanded || isHovered || isMobileOpen) && (
           <h1 className="text-xl lg:text-2xl font-bold text-center text-gray-900 dark:text-white">
-            Dream Entertainment
+            Dreams Entertainment
           </h1>
         )}
       </div>

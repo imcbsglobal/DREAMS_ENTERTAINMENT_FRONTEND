@@ -67,6 +67,7 @@ export default function TicketRevenueReport() {
   const [totalTickets, setTotalTickets] = useState(0);
   const [entryTypeCounts, setEntryTypeCounts] = useState<EntryTypeCount[]>([]);
   const [ticketLoading, setTicketLoading] = useState(true);
+  const [entryTypeLoading, setEntryTypeLoading] = useState(false);
   
   // Revenue Report State
   const [revenueData, setRevenueData] = useState<RevenueReportResponse | null>(null);
@@ -74,9 +75,16 @@ export default function TicketRevenueReport() {
   
   // Shared State
   const [events, setEvents] = useState<Event[]>([]);
-  const [selectedEvent, setSelectedEvent] = useState("");
-  const [startDate, setStartDate] = useState("");
-  const [endDate, setEndDate] = useState("");
+  const [selectedEvent, setSelectedEvent] = useState(""); // Default to all events
+  const [startDate, setStartDate] = useState(() => {
+    const today = new Date();
+    return today.toISOString().split('T')[0]; // Format: YYYY-MM-DD
+  });
+  const [endDate, setEndDate] = useState(() => {
+    const today = new Date();
+    return today.toISOString().split('T')[0]; // Format: YYYY-MM-DD
+  });
+  const [dateFilter, setDateFilter] = useState<"all" | "today" | "custom">("custom"); // Default to custom
   
   // Minimize/Expand State
   const [isRevenueMinimized, setIsRevenueMinimized] = useState(false);
@@ -88,11 +96,6 @@ export default function TicketRevenueReport() {
   const [apiPageSize, setApiPageSize] = useState(100); // Backend page size
   const [hasNextPage, setHasNextPage] = useState(false);
   const [hasPreviousPage, setHasPreviousPage] = useState(false);
-  
-  // UI Pagination State (for frontend display pagination)
-  const [currentPage, setCurrentPage] = useState(1);
-  const [itemsPerPage, setItemsPerPage] = useState(50);
-  const totalPages = Math.ceil(totalTickets / itemsPerPage);
 
   useEffect(() => {
     loadEvents();
@@ -104,10 +107,11 @@ export default function TicketRevenueReport() {
       startDate,
       endDate
     });
-    setCurrentPage(1); // Reset UI page
     setApiPage(1); // Reset API page
+    
     loadTickets();
     fetchRevenue();
+    fetchEntryTypeBreakdown(); // Fetch complete entry type breakdown
   }, [selectedEvent, startDate, endDate]);
   
   useEffect(() => {
@@ -198,16 +202,41 @@ export default function TicketRevenueReport() {
         lastTicket: ticketData[ticketData.length - 1]
       });
       
-      setTickets(ticketData);
-      setTotalTickets(totalCount);
+      // CLIENT-SIDE DATE FILTERING (Fallback if backend doesn't filter)
+      let filteredTickets = ticketData;
       
-      // Calculate entry type counts from current page data
-      const counts = ticketData.reduce((acc: Record<string, number>, ticket) => {
-        acc[ticket.entry_type_name] = (acc[ticket.entry_type_name] || 0) + 1;
-        return acc;
-      }, {});
+      // Apply custom date range filter
+      if (startDate || endDate) {
+        console.log('Applying client-side date filtering:', { startDate, endDate });
+        
+        filteredTickets = ticketData.filter(ticket => {
+          const ticketDate = ticket.created_at.split('T')[0]; // Get YYYY-MM-DD
+          
+          // Check start date
+          if (startDate && ticketDate < startDate) {
+            return false;
+          }
+          
+          // Check end date
+          if (endDate && ticketDate > endDate) {
+            return false;
+          }
+          
+          return true;
+        });
+        
+        console.log(`Client-side filtering: ${ticketData.length} → ${filteredTickets.length} tickets`);
+      }
       
-      setEntryTypeCounts(Object.entries(counts).map(([name, count]) => ({ entry_type_name: name, count })));
+      setTickets(filteredTickets);
+      // Use filtered count when date filters are applied, otherwise use API total
+      if (startDate || endDate) {
+        // When date filtering, we need to get total from all pages
+        // For now, use filtered count from current page (will be updated by fetchEntryTypeBreakdown)
+        setTotalTickets(totalCount); // Keep API count for pagination
+      } else {
+        setTotalTickets(totalCount);
+      }
     } catch (err: any) {
       console.error("Failed to fetch tickets:", err);
       
@@ -221,26 +250,106 @@ export default function TicketRevenueReport() {
     }
   };
 
+  const fetchEntryTypeBreakdown = async () => {
+    setEntryTypeLoading(true);
+    try {
+      const token = localStorage.getItem("access_token");
+      
+      // Fetch ALL tickets to calculate accurate entry type breakdown
+      let allTickets: Ticket[] = [];
+      let currentBreakdownPage = 1;
+      const breakdownPageSize = 500;
+      let hasMore = true;
+      
+      while (hasMore) {
+        let url = "https://de.imcbs.com/api/admin/reports/tickets/";
+        
+        const params = [];
+        if (selectedEvent) params.push(`event_id=${selectedEvent}`);
+        if (startDate) params.push(`start_date=${startDate}`);
+        if (endDate) params.push(`end_date=${endDate}`);
+        params.push(`page=${currentBreakdownPage}`);
+        params.push(`page_size=${breakdownPageSize}`);
+        
+        if (params.length > 0) {
+          url += '?' + params.join("&");
+        }
+        
+        console.log(`Fetching entry type breakdown page ${currentBreakdownPage}`);
+        
+        const response = await axios.get<PaginatedTicketReportResponse>(url, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        
+        const isPaginated = 'results' in response.data;
+        
+        if (isPaginated) {
+          const pageTickets = response.data.results.tickets || [];
+          allTickets = [...allTickets, ...pageTickets];
+          hasMore = !!response.data.next;
+        } else {
+          allTickets = (response.data as any).tickets || [];
+          hasMore = false;
+        }
+        
+        currentBreakdownPage++;
+        
+        if (currentBreakdownPage > 100) {
+          console.warn('Entry type breakdown page limit reached');
+          break;
+        }
+      }
+      
+      console.log(`Calculating entry type breakdown from ${allTickets.length} tickets`);
+      
+      // Apply client-side date filtering if needed
+      let filteredTickets = allTickets;
+      
+      // Apply date range filter
+      if (startDate || endDate) {
+        filteredTickets = allTickets.filter(ticket => {
+          const ticketDate = ticket.created_at.split('T')[0];
+          if (startDate && ticketDate < startDate) return false;
+          if (endDate && ticketDate > endDate) return false;
+          return true;
+        });
+      }
+      
+      // Calculate entry type counts from all filtered tickets
+      const counts = filteredTickets.reduce((acc: Record<string, number>, ticket) => {
+        acc[ticket.entry_type_name] = (acc[ticket.entry_type_name] || 0) + 1;
+        return acc;
+      }, {});
+      
+      setEntryTypeCounts(Object.entries(counts).map(([name, count]) => ({ entry_type_name: name, count })));
+      
+      // Update total tickets with accurate filtered count
+      setTotalTickets(filteredTickets.length);
+      
+      console.log('Entry type breakdown calculated:', counts);
+      
+    } catch (err) {
+      console.error('Failed to fetch entry type breakdown:', err);
+    } finally {
+      setEntryTypeLoading(false);
+    }
+  };
+
   const fetchRevenue = async () => {
     setRevenueLoading(true);
     try {
       const token = localStorage.getItem("access_token");
       
-      // If date filters are applied, calculate revenue from ticket data instead
-      if (startDate || endDate) {
-        console.log('Date filters applied - calculating revenue from ticket data instead of revenue API');
+      // Always calculate revenue from tickets when any filter is applied
+      // This ensures date filtering works correctly
+      if (startDate || endDate || selectedEvent) {
+        console.log('Filters applied - calculating revenue from ticket data');
         await calculateRevenueFromTickets(token);
         return;
       }
       
+      // No filters → Use revenue API
       let url = "https://de.imcbs.com/api/admin/reports/revenue/";
-      
-      const params = [];
-      if (selectedEvent) params.push(`event_id=${selectedEvent}`);
-      
-      if (params.length > 0) {
-        url += '?' + params.join("&");
-      }
       
       console.log('Loading revenue with URL:', url);
       
@@ -312,7 +421,24 @@ export default function TicketRevenueReport() {
       
       console.log(`Calculating revenue from ${allTickets.length} tickets`);
       
-      // Calculate revenue by event from all tickets
+      // Apply client-side date filtering if backend doesn't filter
+      let filteredTickets = allTickets;
+      
+      // Apply date range filter
+      if (startDate || endDate) {
+        console.log('Applying client-side date filtering for revenue:', { startDate, endDate });
+        
+        filteredTickets = allTickets.filter(ticket => {
+          const ticketDate = ticket.created_at.split('T')[0];
+          if (startDate && ticketDate < startDate) return false;
+          if (endDate && ticketDate > endDate) return false;
+          return true;
+        });
+        
+        console.log(`Revenue date filtering: ${allTickets.length} → ${filteredTickets.length} tickets`);
+      }
+      
+      // Calculate revenue by event from filtered tickets
       const revenueByEvent: Record<string, {
         event__name: string;
         event__code: string;
@@ -322,7 +448,7 @@ export default function TicketRevenueReport() {
       
       let totalRevenue = 0;
       
-      allTickets.forEach(ticket => {
+      filteredTickets.forEach(ticket => {
         const eventKey = `${ticket.event_name}`;
         const price = parseFloat(ticket.price) || 0;
         
@@ -770,8 +896,9 @@ export default function TicketRevenueReport() {
                 id="event"
                 value={selectedEvent}
                 onChange={(e) => {
-                  console.log('Event filter changed:', e.target.value);
-                  setSelectedEvent(e.target.value);
+                  const value = e.target.value;
+                  console.log('Event filter changed:', value);
+                  setSelectedEvent(value);
                 }}
                 className="h-10 w-full rounded-lg border bg-transparent text-gray-800 border-gray-300 focus:border-brand-300 focus:ring-brand-500/20 dark:border-gray-700 dark:text-white/90 dark:focus:border-brand-800 px-3 py-2 text-sm shadow-sm focus:outline-none focus:ring-2 dark:bg-gray-900 placeholder:text-gray-400 dark:placeholder:text-white/30 transition-colors"
               >
@@ -822,6 +949,7 @@ export default function TicketRevenueReport() {
                       setSelectedEvent('');
                       setStartDate('');
                       setEndDate('');
+                      setApiPage(1);
                     }}
                     className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-gray-700 bg-gray-100 border border-gray-300 rounded-lg hover:bg-gray-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-brand-500 dark:bg-gray-700 dark:text-gray-300 dark:border-gray-600 dark:hover:bg-gray-600 transition-colors"
                   >
@@ -873,7 +1001,7 @@ export default function TicketRevenueReport() {
                 <div>
                   <p className="text-sm font-medium text-blue-900 dark:text-blue-100">Date-Filtered Revenue</p>
                   <p className="text-xs text-blue-700 dark:text-blue-300">
-                    Revenue calculated from filtered ticket data ({startDate} to {endDate})
+                    Revenue calculated from filtered ticket data ({startDate || 'start'} to {endDate || 'end'})
                   </p>
                 </div>
               </div>
@@ -996,7 +1124,7 @@ export default function TicketRevenueReport() {
                   <div>
                     <h3 className="font-semibold text-gray-900 dark:text-white">Entry Type Breakdown</h3>
                     <p className="text-xs text-gray-500 dark:text-gray-400">
-                      {tickets.length} total tickets • {entryTypeCounts.length} entry types
+                      {totalTickets.toLocaleString()} total tickets • {entryTypeCounts.length} entry types
                     </p>
                   </div>
                 </div>
@@ -1014,9 +1142,17 @@ export default function TicketRevenueReport() {
             
             {!isEntryTypeMinimized && (
               <div className="p-4">
+                {entryTypeLoading ? (
+                  <div className="flex items-center justify-center py-8">
+                    <div className="flex items-center gap-2">
+                      <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-brand-600"></div>
+                      <span className="text-sm text-gray-500 dark:text-gray-400">Loading entry type breakdown...</span>
+                    </div>
+                  </div>
+                ) : entryTypeCounts.length > 0 ? (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                   {entryTypeCounts.map((entry) => {
-                    const percentage = tickets.length > 0 ? (entry.count / tickets.length) * 100 : 0;
+                    const percentage = totalTickets > 0 ? (entry.count / totalTickets) * 100 : 0;
                     const colors = {
                       'VIP': 'bg-purple-500',
                       'General': 'bg-blue-500',
@@ -1045,6 +1181,11 @@ export default function TicketRevenueReport() {
                     );
                   })}
                 </div>
+                ) : (
+                  <div className="p-8 text-center">
+                    <p className="text-sm text-gray-500 dark:text-gray-400">No entry type data available</p>
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -1062,7 +1203,7 @@ export default function TicketRevenueReport() {
                   <div>
                     <h3 className="font-semibold text-gray-900 dark:text-white">Ticket Details</h3>
                     <p className="text-xs text-gray-500 dark:text-gray-400">
-                      Showing {Math.min((currentPage - 1) * itemsPerPage + 1, totalTickets)}-{Math.min(currentPage * itemsPerPage, totalTickets)} of {totalTickets} tickets • Page {currentPage} of {totalPages}
+                      Showing {Math.min((apiPage - 1) * apiPageSize + 1, totalTickets)}-{Math.min(apiPage * apiPageSize, totalTickets)} of {totalTickets} tickets • Page {apiPage} of {Math.ceil(totalTickets / apiPageSize)}
                     </p>
                   </div>
                 </div>
@@ -1198,6 +1339,7 @@ export default function TicketRevenueReport() {
                         }}
                         className="h-8 rounded-lg border bg-transparent text-gray-800 border-gray-300 focus:border-brand-300 focus:ring-brand-500/20 dark:border-gray-700 dark:text-white/90 dark:focus:border-brand-800 px-2 py-1 text-sm shadow-sm focus:outline-none focus:ring-2 dark:bg-gray-900 transition-colors"
                       >
+                        <option value={10}>10</option>
                         <option value={50}>50</option>
                         <option value={100}>100</option>
                         <option value={200}>200</option>

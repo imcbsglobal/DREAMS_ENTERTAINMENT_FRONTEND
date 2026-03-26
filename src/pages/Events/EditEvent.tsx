@@ -5,6 +5,7 @@ import flatpickr from "flatpickr";
 import PageMeta from "../../components/common/PageMeta";
 import PageBreadcrumb from "../../components/common/PageBreadCrumb";
 import ComponentCard from "../../components/common/ComponentCard";
+import SuccessPopup from "../../components/common/SuccessPopup";
 import Label from "../../components/form/Label";
 import Input from "../../components/form/input/InputField";
 
@@ -29,6 +30,7 @@ export default function EditEvent() {
   const [loadingSubEvents, setLoadingSubEvents] = useState(true);
   const [message, setMessage] = useState("");
   const [warnings, setWarnings] = useState([]);
+  const [showSuccessPopup, setShowSuccessPopup] = useState(false);
 
   // Load predefined sub-events from backend
   const loadPredefinedSubEvents = async () => {
@@ -221,7 +223,7 @@ export default function EditEvent() {
       
       console.log('API Response:', response.data);
       
-      setMessage("success");
+      setShowSuccessPopup(true);
       if (response.data.warnings && response.data.warnings.length > 0) {
         setWarnings(response.data.warnings);
         console.log('API Warnings:', response.data.warnings);
@@ -231,7 +233,7 @@ export default function EditEvent() {
       console.log('Event updated successfully!');
       console.log('Sub-events that were sent:', selectedSubEvents);
       
-      setTimeout(() => navigate("/ongoing-events"), 2000);
+      setTimeout(() => navigate("/ongoing-events"), 3500);
     } catch (err: any) {
       console.error('Update event error:', err);
       if (err.response?.data) {
@@ -279,13 +281,9 @@ export default function EditEvent() {
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
         <div className="space-y-6">
           <ComponentCard title="Event Details" desc="Update event information">
-            {message && (
-              <div className={`p-3 text-sm rounded-lg mb-4 ${
-                message === "success" 
-                  ? "text-green-600 bg-green-50 border border-green-200 dark:bg-green-900/20 dark:border-green-800 dark:text-green-400"
-                  : "text-red-600 bg-red-50 border border-red-200 dark:bg-red-900/20 dark:border-red-800 dark:text-red-400"
-              }`}>
-                {message === "success" ? "Event updated successfully!" : message}
+            {message && message !== "success" && (
+              <div className="p-3 text-sm rounded-lg mb-4 text-red-600 bg-red-50 border border-red-200 dark:bg-red-900/20 dark:border-red-800 dark:text-red-400">
+                {message}
               </div>
             )}
 
@@ -605,6 +603,19 @@ export default function EditEvent() {
           {/* Additional information or preview can be added here */}
         </div>
       </div>
+
+      {/* Success Popup */}
+      <SuccessPopup
+        isOpen={showSuccessPopup}
+        onClose={() => {
+          setShowSuccessPopup(false);
+          navigate("/ongoing-events");
+        }}
+        title="Event Updated Successfully!"
+        message={`Your event "${formData.name}" has been updated successfully${warnings.length > 0 ? ' with some warnings. Check the warnings section for details.' : '.'}`}
+        autoClose={true}
+        autoCloseDelay={3000}
+      />
     </>
   );
 }

@@ -4,6 +4,7 @@ import axios from "axios";
 import PageMeta from "../../components/common/PageMeta";
 import PageBreadcrumb from "../../components/common/PageBreadCrumb";
 import ComponentCard from "../../components/common/ComponentCard";
+import SuccessPopup from "../../components/common/SuccessPopup";
 import Label from "../../components/form/Label";
 import Input from "../../components/form/input/InputField";
 import Checkbox from "../../components/form/input/Checkbox";
@@ -15,15 +16,17 @@ export default function CreateEntryType() {
   const [subEvents, setSubEvents] = useState([]);
   const [existingEntryTypes, setExistingEntryTypes] = useState([]);
   const [loadingEntryTypes, setLoadingEntryTypes] = useState(false);
+  const [useDefaultName, setUseDefaultName] = useState(true);
   const [formData, setFormData] = useState({
     event: location.state?.eventId || "",
     sub_event: "",
-    name: "",
+    name: "Ticket",
     price: "",
     is_active: true
   });
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
+  const [showSuccessPopup, setShowSuccessPopup] = useState(false);
   const [editingEntryType, setEditingEntryType] = useState(null);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
@@ -61,11 +64,35 @@ export default function CreateEntryType() {
           });
           setSubEvents(response.data);
           
-          // Auto-select first sub-event as default
+          // Smart default selection: prioritize sub-events with "Entry" tickets
           if (response.data.length > 0) {
+            let defaultSubEvent = response.data[0]; // Fallback to first
+            
+            // Check each sub-event for existing "Entry" tickets
+            for (const subEvent of response.data) {
+              try {
+                const entryTypesResponse = await axios.get(`https://de.imcbs.com/api/admin/entry-types/${subEvent.id}/`, {
+                  headers: { Authorization: `Bearer ${token}` }
+                });
+                
+                // Check if any entry type contains "Entry" in the name
+                const hasEntryTicket = entryTypesResponse.data.some(entryType => 
+                  entryType.name.toLowerCase().includes('entry')
+                );
+                
+                if (hasEntryTicket) {
+                  defaultSubEvent = subEvent;
+                  break; // Use first sub-event found with "Entry" tickets
+                }
+              } catch (err) {
+                // Continue checking other sub-events if this one fails
+                continue;
+              }
+            }
+            
             setFormData(prev => ({
               ...prev,
-              sub_event: response.data[0].id
+              sub_event: defaultSubEvent.id
             }));
           }
         } catch (err) {
@@ -98,6 +125,13 @@ export default function CreateEntryType() {
     }));
   };
 
+  const handleToggleDefaultName = (checked: boolean) => {
+    setUseDefaultName(checked);
+    if (checked) {
+      setFormData(prev => ({ ...prev, name: "Ticket" }));
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
@@ -108,12 +142,19 @@ export default function CreateEntryType() {
       await axios.post("https://de.imcbs.com/api/admin/create-entry-type/", formData, {
         headers: { Authorization: `Bearer ${token}` }
       });
-      setMessage("success");
+      setShowSuccessPopup(true);
       // Refresh the existing entry types list
       if (formData.sub_event) {
         fetchExistingEntryTypes();
       }
-      setTimeout(() => navigate("/ongoing-events"), 1500);
+      // Reset form after successful creation
+      setFormData({
+        event: formData.event, // Keep the selected event
+        sub_event: formData.sub_event, // Keep the selected sub_event
+        name: useDefaultName ? "Ticket" : "", // Reset name based on toggle
+        price: "", // Clear the price
+        is_active: true // Reset to default
+      });
     } catch (err: any) {
       setMessage(err.response?.data?.error || "Failed to create entry type");
     } finally {
@@ -261,13 +302,9 @@ export default function CreateEntryType() {
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
         <div className="space-y-6">
           <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-6">
-            {message && (
-              <div className={`p-3 text-sm rounded-lg mb-4 ${
-                message === "success" 
-                  ? "text-green-600 bg-green-50 border border-green-200 dark:bg-green-900/20 dark:border-green-800 dark:text-green-400"
-                  : "text-red-600 bg-red-50 border border-red-200 dark:bg-red-900/20 dark:border-red-800 dark:text-red-400"
-              }`}>
-                {message === "success" ? "Entry type created successfully!" : message}
+            {message && message !== "success" && (
+              <div className="p-3 text-sm rounded-lg mb-4 text-red-600 bg-red-50 border border-red-200 dark:bg-red-900/20 dark:border-red-800 dark:text-red-400">
+                {message}
               </div>
             )}
             
@@ -313,20 +350,6 @@ export default function CreateEntryType() {
 
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                 <div>
-                  <Label htmlFor="name">Entry Type Name *</Label>
-                  <Input
-                    type="text"
-                    id="name"
-                    name="name"
-                    value={formData.name}
-                    onChange={handleInputChange}
-                    placeholder="e.g., Adult, Kids, VIP"
-                    required
-                    disabled={loading}
-                  />
-                </div>
-
-                <div>
                   <Label htmlFor="price">Price *</Label>
                   <Input
                     type="number"
@@ -340,6 +363,74 @@ export default function CreateEntryType() {
                     disabled={loading}
                   />
                 </div>
+
+                <div>
+                  {useDefaultName ? (
+                    // Show simple text with custom option when using default
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg border border-gray-200 dark:border-gray-600">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                            Entry Type: 
+                          </span>
+                          <span className="text-sm font-semibold text-brand-600 dark:text-brand-400">
+                            Ticket
+                          </span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => handleToggleDefaultName(false)}
+                          disabled={loading}
+                          className="text-sm text-brand-600 hover:text-brand-700 dark:text-brand-400 dark:hover:text-brand-300 flex items-center gap-1 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                          </svg>
+                          Custom entry name
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    // Show full input field with toggle when custom
+                    <div>
+                      <div className="flex items-center justify-between mb-2">
+                        <Label htmlFor="name">Entry Type Name</Label>
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs text-gray-500 dark:text-gray-400">
+                            Use default
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => handleToggleDefaultName(!useDefaultName)}
+                            disabled={loading}
+                            className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-brand-500/20 disabled:opacity-50 disabled:cursor-not-allowed ${
+                              useDefaultName
+                                ? "bg-brand-500"
+                                : "bg-gray-200 dark:bg-gray-700"
+                            }`}
+                          >
+                            <span
+                              className={`inline-block h-3 w-3 transform rounded-full bg-white transition-transform ${
+                                useDefaultName ? "translate-x-5" : "translate-x-1"
+                              }`}
+                            />
+                          </button>
+                        </div>
+                      </div>
+                      <Input
+                        type="text"
+                        id="name"
+                        name="name"
+                        value={formData.name}
+                        onChange={handleInputChange}
+                        placeholder="e.g., Adult, Kids, VIP"
+                        required
+                        disabled={loading}
+                      />
+                    </div>
+                  )}
+                </div>
+
               </div>
 
               <div className="flex items-center gap-3">
@@ -494,6 +585,19 @@ export default function CreateEntryType() {
           )}
         </div>
       </div>
+
+      {/* Success Popup */}
+      <SuccessPopup
+        isOpen={showSuccessPopup}
+        onClose={() => {
+          setShowSuccessPopup(false);
+          // Stay on the same page, don't navigate
+        }}
+        title="Entry Type Created Successfully!"
+        message="Your entry type has been created and is now available for ticket sales. You can create another entry type or go back to ongoing events."
+        autoClose={true}
+        autoCloseDelay={3000}
+      />
 
       {/* Delete Confirmation Modal */}
       {showDeleteModal && deletingEntryType && (

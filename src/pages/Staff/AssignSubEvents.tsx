@@ -4,6 +4,7 @@ import { useNavigate } from "react-router";
 import PageMeta from "../../components/common/PageMeta";
 import PageBreadcrumb from "../../components/common/PageBreadCrumb";
 import ComponentCard from "../../components/common/ComponentCard";
+import SuccessPopup from "../../components/common/SuccessPopup";
 import Label from "../../components/form/Label";
 
 interface Staff {
@@ -39,6 +40,7 @@ export default function AssignSubEvents() {
   const [currentAssignments, setCurrentAssignments] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
+  const [showSuccessPopup, setShowSuccessPopup] = useState(false);
   const [assignmentCount, setAssignmentCount] = useState(0);
   const [expandedEvents, setExpandedEvents] = useState<Set<string>>(new Set());
 
@@ -146,7 +148,7 @@ export default function AssignSubEvents() {
         { headers: { Authorization: `Bearer ${token}` } }
       );
 
-      setMessage("success");
+      setShowSuccessPopup(true);
       setAssignmentCount(prev => prev + 1);
       
       const updatedStaffList = await loadStaff();
@@ -160,8 +162,6 @@ export default function AssignSubEvents() {
         }).filter(Boolean);
         setCurrentAssignments(assignments);
       }
-      
-      setTimeout(() => setMessage(""), 3000);
     } catch (error: any) {
       setMessage(error.response?.data?.error || "Assignment failed");
     }
@@ -236,13 +236,9 @@ export default function AssignSubEvents() {
           </div>
         </div>
 
-        {message && (
-          <div className={`p-3 text-sm rounded-lg ${
-            message === "success" 
-              ? "text-green-600 bg-green-50 border border-green-200 dark:bg-green-900/20 dark:border-green-800 dark:text-green-400"
-              : "text-red-600 bg-red-50 border border-red-200 dark:bg-red-900/20 dark:border-red-800 dark:text-red-400"
-          }`}>
-            {message === "success" ? `Successfully assigned ${selectedSubEvents.size} sub-events!` : message}
+        {message && message !== "success" && (
+          <div className="p-3 text-sm rounded-lg text-red-600 bg-red-50 border border-red-200 dark:bg-red-900/20 dark:border-red-800 dark:text-red-400">
+            {message}
           </div>
         )}
 
@@ -379,6 +375,18 @@ export default function AssignSubEvents() {
           </ComponentCard>
         )}
       </div>
+
+      {/* Success Popup */}
+      <SuccessPopup
+        isOpen={showSuccessPopup}
+        onClose={() => {
+          setShowSuccessPopup(false);
+        }}
+        title="Assignment Successful!"
+        message={`Successfully assigned ${selectedSubEvents.size} sub-event${selectedSubEvents.size !== 1 ? 's' : ''} to ${selectedStaff?.user.first_name} ${selectedStaff?.user.last_name}!`}
+        autoClose={true}
+        autoCloseDelay={3000}
+      />
     </>
   );
 }
