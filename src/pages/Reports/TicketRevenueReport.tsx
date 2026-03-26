@@ -35,6 +35,13 @@ interface TicketReportResponse {
   tickets: Ticket[];
 }
 
+interface PaginatedTicketReportResponse {
+  count: number;
+  next: string | null;
+  previous: string | null;
+  results: TicketReportResponse;
+}
+
 interface EntryTypeCount {
   entry_type_name: string;
   count: number;
@@ -75,6 +82,17 @@ export default function TicketRevenueReport() {
   const [isRevenueMinimized, setIsRevenueMinimized] = useState(false);
   const [isEntryTypeMinimized, setIsEntryTypeMinimized] = useState(false);
   const [isTicketTableMinimized, setIsTicketTableMinimized] = useState(false);
+  
+  // API Pagination State (for backend pagination)
+  const [apiPage, setApiPage] = useState(1);
+  const [apiPageSize, setApiPageSize] = useState(100); // Backend page size
+  const [hasNextPage, setHasNextPage] = useState(false);
+  const [hasPreviousPage, setHasPreviousPage] = useState(false);
+  
+  // UI Pagination State (for frontend display pagination)
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage, setItemsPerPage] = useState(50);
+  const totalPages = Math.ceil(totalTickets / itemsPerPage);
 
   useEffect(() => {
     loadEvents();
@@ -86,9 +104,16 @@ export default function TicketRevenueReport() {
       startDate,
       endDate
     });
+    setCurrentPage(1); // Reset UI page
+    setApiPage(1); // Reset API page
     loadTickets();
     fetchRevenue();
   }, [selectedEvent, startDate, endDate]);
+  
+  useEffect(() => {
+    // Load tickets when API page changes
+    loadTickets();
+  }, [apiPage, apiPageSize]);
 
   const loadEvents = async () => {
     try {
@@ -119,98 +144,78 @@ export default function TicketRevenueReport() {
         console.log('Adding end_date filter:', endDate);
       }
       
+      // Add pagination parameters
+      params.push(`page=${apiPage}`);
+      params.push(`page_size=${apiPageSize}`);
+      
       if (params.length > 0) {
         url += '?' + params.join("&");
       }
       
       console.log('Loading tickets with URL:', url);
-      console.log('Current filter state:', { selectedEvent, startDate, endDate });
+      console.log('Current filter state:', { selectedEvent, startDate, endDate, apiPage, apiPageSize });
       
-      const response = await axios.get<TicketReportResponse>(url, {
+      const response = await axios.get<PaginatedTicketReportResponse>(url, {
         headers: { Authorization: `Bearer ${token}` }
       });
       
-      console.log('API Response:', {
-        totalTickets: response.data.total_tickets,
-        ticketsCount: response.data.tickets?.length,
-        firstTicket: response.data.tickets?.[0],
-        lastTicket: response.data.tickets?.[response.data.tickets.length - 1],
-        sampleTicketFields: response.data.tickets?.[0] ? Object.keys(response.data.tickets[0]) : []
+      // Check if response is paginated or not
+      const isPaginated = 'results' in response.data;
+      
+      let ticketData: Ticket[];
+      let totalCount: number;
+      
+      if (isPaginated) {
+        // Paginated response
+        console.log('Paginated API Response:', {
+          count: response.data.count,
+          hasNext: !!response.data.next,
+          hasPrevious: !!response.data.previous,
+          ticketsInPage: response.data.results.tickets?.length
+        });
+        
+        ticketData = response.data.results.tickets || [];
+        totalCount = response.data.count;
+        setHasNextPage(!!response.data.next);
+        setHasPreviousPage(!!response.data.previous);
+      } else {
+        // Non-paginated response (backward compatibility)
+        console.log('Non-paginated API Response:', {
+          totalTickets: (response.data as any).total_tickets,
+          ticketsCount: (response.data as any).tickets?.length
+        });
+        
+        ticketData = (response.data as any).tickets || [];
+        totalCount = (response.data as any).total_tickets || 0;
+        setHasNextPage(false);
+        setHasPreviousPage(false);
+      }
+      
+      console.log('Processed ticket data:', {
+        totalCount,
+        ticketsLoaded: ticketData.length,
+        firstTicket: ticketData[0],
+        lastTicket: ticketData[ticketData.length - 1]
       });
       
-      // Debug: Check actual ticket dates to see if API is filtering
-      if (response.data.tickets && response.data.tickets.length > 0) {
-        const ticketDates = response.data.tickets.map(ticket => ({
-          id: ticket.ticket_id,
-          created_at: ticket.created_at,
-          date_only: ticket.created_at.split('T')[0]
-        }));
-        
-        const uniqueDates = [...new Set(ticketDates.map(t => t.date_only))].sort();
-        console.log('Ticket dates in response:', {
-          dateRange: `${uniqueDates[0]} to ${uniqueDates[uniqueDates.length - 1]}`,
-          uniqueDates: uniqueDates,
-          requestedRange: `${startDate} to ${endDate}`,
-          sampleTickets: ticketDates.slice(0, 5)
-        });
-        
-        // Check if any tickets fall within the requested date range
-        const ticketsInRange = response.data.tickets.filter(ticket => {
-          const ticketDate = ticket.created_at.split('T')[0];
-          const isInRange = (!startDate || ticketDate >= startDate) && (!endDate || ticketDate <= endDate);
-          return isInRange;
-        });
-        
-        console.log(`Tickets that should be in range (${startDate} to ${endDate}):`, {
-          totalReturned: response.data.tickets.length,
-          shouldBeInRange: ticketsInRange.length,
-          apiFilteringWorking: ticketsInRange.length === response.data.tickets.length
-        });
-        
-        if (ticketsInRange.length !== response.data.tickets.length) {
-          console.warn('⚠️ API is not filtering properly! Expected:', ticketsInRange.length, 'Got:', response.data.tickets.length);
-        }
-      }
+      setTickets(ticketData);
+      setTotalTickets(totalCount);
       
-      let filteredTickets = response.data.tickets || [];
-      let filteredTotal = response.data.total_tickets || 0;
-      
-      // Client-side filtering as fallback if API doesn't filter properly
-      if ((startDate || endDate) && filteredTickets.length > 0) {
-        const originalCount = filteredTickets.length;
-        filteredTickets = filteredTickets.filter(ticket => {
-          const ticketDate = ticket.created_at.split('T')[0];
-          
-          if (startDate && ticketDate < startDate) {
-            return false;
-          }
-          if (endDate && ticketDate > endDate) {
-            return false;
-          }
-          return true;
-        });
-        
-        if (originalCount !== filteredTickets.length) {
-          console.log('🔍 Client-side filtering applied:', {
-            original: originalCount,
-            filtered: filteredTickets.length,
-            dateRange: `${startDate} to ${endDate}`
-          });
-          filteredTotal = filteredTickets.length;
-        }
-      }
-      
-      setTickets(filteredTickets);
-      setTotalTickets(filteredTotal);
-      
-      const counts = filteredTickets.reduce((acc: Record<string, number>, ticket) => {
+      // Calculate entry type counts from current page data
+      const counts = ticketData.reduce((acc: Record<string, number>, ticket) => {
         acc[ticket.entry_type_name] = (acc[ticket.entry_type_name] || 0) + 1;
         return acc;
       }, {});
       
       setEntryTypeCounts(Object.entries(counts).map(([name, count]) => ({ entry_type_name: name, count })));
-    } catch (err) {
+    } catch (err: any) {
       console.error("Failed to fetch tickets:", err);
+      
+      // Check if it's a large dataset error
+      if (err.response?.data?.error) {
+        console.warn('Large dataset detected:', err.response.data);
+        alert(`Dataset too large. Using pagination automatically.\n\nTotal tickets: ${err.response.data.total_tickets}`);
+      }
     } finally {
       setTicketLoading(false);
     }
@@ -260,42 +265,54 @@ export default function TicketRevenueReport() {
   
   const calculateRevenueFromTickets = async (token: string) => {
     try {
-      // Get filtered ticket data
-      let url = "https://de.imcbs.com/api/admin/reports/tickets/";
+      // Fetch ALL tickets for revenue calculation (paginated)
+      let allTickets: Ticket[] = [];
+      let currentCalcPage = 1;
+      const calcPageSize = 500;
+      let hasMore = true;
       
-      const params = [];
-      if (selectedEvent) params.push(`event_id=${selectedEvent}`);
-      if (startDate) params.push(`start_date=${startDate}`);
-      if (endDate) params.push(`end_date=${endDate}`);
-      
-      if (params.length > 0) {
-        url += '?' + params.join("&");
-      }
-      
-      console.log('Fetching tickets for revenue calculation:', url);
-      
-      const response = await axios.get<TicketReportResponse>(url, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      
-      let filteredTickets = response.data.tickets || [];
-      
-      // Apply client-side date filtering if needed
-      if ((startDate || endDate) && filteredTickets.length > 0) {
-        filteredTickets = filteredTickets.filter(ticket => {
-          const ticketDate = ticket.created_at.split('T')[0];
-          
-          if (startDate && ticketDate < startDate) {
-            return false;
-          }
-          if (endDate && ticketDate > endDate) {
-            return false;
-          }
-          return true;
+      while (hasMore) {
+        let url = "https://de.imcbs.com/api/admin/reports/tickets/";
+        
+        const params = [];
+        if (selectedEvent) params.push(`event_id=${selectedEvent}`);
+        if (startDate) params.push(`start_date=${startDate}`);
+        if (endDate) params.push(`end_date=${endDate}`);
+        params.push(`page=${currentCalcPage}`);
+        params.push(`page_size=${calcPageSize}`);
+        
+        if (params.length > 0) {
+          url += '?' + params.join("&");
+        }
+        
+        console.log(`Fetching revenue calculation page ${currentCalcPage}:`, url);
+        
+        const response = await axios.get<PaginatedTicketReportResponse>(url, {
+          headers: { Authorization: `Bearer ${token}` }
         });
+        
+        const isPaginated = 'results' in response.data;
+        
+        if (isPaginated) {
+          const pageTickets = response.data.results.tickets || [];
+          allTickets = [...allTickets, ...pageTickets];
+          hasMore = !!response.data.next;
+        } else {
+          allTickets = (response.data as any).tickets || [];
+          hasMore = false;
+        }
+        
+        currentCalcPage++;
+        
+        if (currentCalcPage > 100) {
+          console.warn('Revenue calculation page limit reached');
+          break;
+        }
       }
       
-      // Calculate revenue by event from filtered tickets
+      console.log(`Calculating revenue from ${allTickets.length} tickets`);
+      
+      // Calculate revenue by event from all tickets
       const revenueByEvent: Record<string, {
         event__name: string;
         event__code: string;
@@ -305,14 +322,14 @@ export default function TicketRevenueReport() {
       
       let totalRevenue = 0;
       
-      filteredTickets.forEach(ticket => {
+      allTickets.forEach(ticket => {
         const eventKey = `${ticket.event_name}`;
         const price = parseFloat(ticket.price) || 0;
         
         if (!revenueByEvent[eventKey]) {
           revenueByEvent[eventKey] = {
             event__name: ticket.event_name,
-            event__code: '', // We don't have event code in ticket data
+            event__code: '',
             ticket_count: 0,
             total_revenue: 0
           };
@@ -334,7 +351,7 @@ export default function TicketRevenueReport() {
       console.log('Calculated revenue from filtered tickets:', {
         totalRevenue: calculatedRevenueData.total_revenue,
         eventsCount: calculatedRevenueData.revenue_by_event.length,
-        ticketsProcessed: filteredTickets.length
+        ticketsProcessed: allTickets.length
       });
       
       setRevenueData(calculatedRevenueData);
@@ -347,16 +364,6 @@ export default function TicketRevenueReport() {
   const handleTicketExport = async () => {
     try {
       const token = localStorage.getItem("access_token");
-      let url = "https://de.imcbs.com/api/admin/reports/tickets/?";
-      
-      const params = [];
-      if (selectedEvent) {
-        params.push(`event_id=${selectedEvent}`);
-      }
-      if (startDate) params.push(`start_date=${startDate}`);
-      if (endDate) params.push(`end_date=${endDate}`);
-      
-      url += params.join("&");
       
       console.log('=== EXPORT DEBUG INFO ===');
       console.log('Export parameters:', {
@@ -365,60 +372,66 @@ export default function TicketRevenueReport() {
         selectedEvent,
         selectedEventName: events.find(e => e.id.toString() === selectedEvent)?.name
       });
-      console.log('Final Export URL:', url);
-      console.log('========================');
       
-      const response = await axios.get<TicketReportResponse>(url, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      // For export, we need to fetch ALL data (not paginated)
+      // We'll fetch in batches and combine
+      let allTickets: Ticket[] = [];
+      let currentExportPage = 1;
+      const exportPageSize = 500; // Larger page size for export
+      let hasMore = true;
       
-      let exportTickets = response.data.tickets || [];
-      let exportTotalTickets = response.data.total_tickets || 0;
-      
-      console.log('=== API RESPONSE DEBUG ===');
-      console.log('Total tickets from API:', exportTotalTickets);
-      console.log('Actual tickets received:', exportTickets.length);
-      console.log('First few tickets:', exportTickets.slice(0, 3).map(t => ({
-        id: t.ticket_id,
-        event: t.event_name,
-        date: t.created_at
-      })));
-      
-      // Client-side filtering as backup if API doesn't filter properly
-      if (startDate || endDate) {
-        const originalCount = exportTickets.length;
-        exportTickets = exportTickets.filter(ticket => {
-          const ticketDate = ticket.created_at.split('T')[0]; // Get YYYY-MM-DD format
-          
-          if (startDate && ticketDate < startDate) {
-            return false;
-          }
-          if (endDate && ticketDate > endDate) {
-            return false;
-          }
-          return true;
+      while (hasMore) {
+        let url = "https://de.imcbs.com/api/admin/reports/tickets/?";
+        
+        const params = [];
+        if (selectedEvent) {
+          params.push(`event_id=${selectedEvent}`);
+        }
+        if (startDate) params.push(`start_date=${startDate}`);
+        if (endDate) params.push(`end_date=${endDate}`);
+        params.push(`page=${currentExportPage}`);
+        params.push(`page_size=${exportPageSize}`);
+        
+        url += params.join("&");
+        
+        console.log(`Fetching export page ${currentExportPage}:`, url);
+        
+        const response = await axios.get<PaginatedTicketReportResponse>(url, {
+          headers: { Authorization: `Bearer ${token}` }
         });
         
-        if (originalCount !== exportTickets.length) {
-          console.log(`🔍 Client-side filtering applied: ${originalCount} -> ${exportTickets.length} tickets`);
-          console.log('Date filter:', { startDate, endDate });
-          exportTotalTickets = exportTickets.length; // Update total count
+        const isPaginated = 'results' in response.data;
+        
+        if (isPaginated) {
+          const pageTickets = response.data.results.tickets || [];
+          allTickets = [...allTickets, ...pageTickets];
+          hasMore = !!response.data.next;
+          console.log(`Page ${currentExportPage}: Loaded ${pageTickets.length} tickets, Total so far: ${allTickets.length}`);
+        } else {
+          // Non-paginated response
+          allTickets = (response.data as any).tickets || [];
+          hasMore = false;
+          console.log(`Non-paginated response: Loaded ${allTickets.length} tickets`);
+        }
+        
+        currentExportPage++;
+        
+        // Safety limit to prevent infinite loops
+        if (currentExportPage > 100) {
+          console.warn('Export page limit reached (100 pages)');
+          break;
         }
       }
       
-      console.log('Final filtered tickets:', exportTickets.length);
-      if (exportTickets.length > 0) {
-        const ticketDates = exportTickets.map(t => t.created_at.split('T')[0]);
-        const uniqueDates = [...new Set(ticketDates)].sort();
-        console.log('Date range in final data:', {
-          earliest: uniqueDates[0],
-          latest: uniqueDates[uniqueDates.length - 1],
-          uniqueDates: uniqueDates
-        });
-      }
-      console.log('========================');
+      console.log('=== EXPORT DATA COLLECTED ===');
+      console.log('Total tickets for export:', allTickets.length);
       
-      const exportCounts = exportTickets.reduce((acc: Record<string, number>, ticket) => {
+      if (allTickets.length === 0) {
+        alert('No tickets to export');
+        return;
+      }
+      
+      const exportCounts = allTickets.reduce((acc: Record<string, number>, ticket) => {
         acc[ticket.entry_type_name] = (acc[ticket.entry_type_name] || 0) + 1;
         return acc;
       }, {});
@@ -433,17 +446,20 @@ export default function TicketRevenueReport() {
         : undefined;
       
       exportTicketReport(
-        exportTickets,
+        allTickets,
         exportEntryTypeCounts,
-        exportTotalTickets,
+        allTickets.length,
         {
           eventName: selectedEventName,
           startDate: startDate,
           endDate: endDate
         }
       );
+      
+      console.log('=== EXPORT COMPLETED ===');
     } catch (error) {
       console.error('Failed to fetch data for export:', error);
+      alert('Failed to export tickets. Please try again.');
       throw error;
     }
   };
@@ -520,49 +536,56 @@ export default function TicketRevenueReport() {
     exportEndDate: string, 
     includeEventFilter: boolean
   ): Promise<RevenueReportResponse> => {
-    // Get filtered ticket data for export
-    let url = "https://de.imcbs.com/api/admin/reports/tickets/";
+    // Fetch ALL tickets for revenue calculation (paginated)
+    let allTickets: Ticket[] = [];
+    let currentExportPage = 1;
+    const exportPageSize = 500;
+    let hasMore = true;
     
-    const params = [];
-    if (includeEventFilter && selectedEvent) {
-      params.push(`event_id=${selectedEvent}`);
-    }
-    if (exportStartDate) params.push(`start_date=${exportStartDate}`);
-    if (exportEndDate) params.push(`end_date=${exportEndDate}`);
-    
-    if (params.length > 0) {
-      url += '?' + params.join("&");
-    }
-    
-    console.log('Fetching tickets for revenue export calculation:', url);
-    
-    const response = await axios.get<TicketReportResponse>(url, {
-      headers: { Authorization: `Bearer ${token}` }
-    });
-    
-    let filteredTickets = response.data.tickets || [];
-    
-    // Apply client-side date filtering if needed (same as display logic)
-    if ((exportStartDate || exportEndDate) && filteredTickets.length > 0) {
-      const originalCount = filteredTickets.length;
-      filteredTickets = filteredTickets.filter(ticket => {
-        const ticketDate = ticket.created_at.split('T')[0];
-        
-        if (exportStartDate && ticketDate < exportStartDate) {
-          return false;
-        }
-        if (exportEndDate && ticketDate > exportEndDate) {
-          return false;
-        }
-        return true;
+    while (hasMore) {
+      let url = "https://de.imcbs.com/api/admin/reports/tickets/";
+      
+      const params = [];
+      if (includeEventFilter && selectedEvent) {
+        params.push(`event_id=${selectedEvent}`);
+      }
+      if (exportStartDate) params.push(`start_date=${exportStartDate}`);
+      if (exportEndDate) params.push(`end_date=${exportEndDate}`);
+      params.push(`page=${currentExportPage}`);
+      params.push(`page_size=${exportPageSize}`);
+      
+      if (params.length > 0) {
+        url += '?' + params.join("&");
+      }
+      
+      console.log(`Fetching revenue calculation page ${currentExportPage}:`, url);
+      
+      const response = await axios.get<PaginatedTicketReportResponse>(url, {
+        headers: { Authorization: `Bearer ${token}` }
       });
       
-      if (originalCount !== filteredTickets.length) {
-        console.log(`🔍 Client-side filtering applied for export: ${originalCount} -> ${filteredTickets.length} tickets`);
+      const isPaginated = 'results' in response.data;
+      
+      if (isPaginated) {
+        const pageTickets = response.data.results.tickets || [];
+        allTickets = [...allTickets, ...pageTickets];
+        hasMore = !!response.data.next;
+      } else {
+        allTickets = (response.data as any).tickets || [];
+        hasMore = false;
+      }
+      
+      currentExportPage++;
+      
+      if (currentExportPage > 100) {
+        console.warn('Revenue calculation page limit reached');
+        break;
       }
     }
     
-    // Calculate revenue by event from filtered tickets (same logic as display)
+    console.log(`Calculating revenue from ${allTickets.length} tickets`);
+    
+    // Calculate revenue by event from all tickets
     const revenueByEvent: Record<string, {
       event__name: string;
       event__code: string;
@@ -572,14 +595,14 @@ export default function TicketRevenueReport() {
     
     let totalRevenue = 0;
     
-    filteredTickets.forEach(ticket => {
+    allTickets.forEach(ticket => {
       const eventKey = `${ticket.event_name}`;
       const price = parseFloat(ticket.price) || 0;
       
       if (!revenueByEvent[eventKey]) {
         revenueByEvent[eventKey] = {
           event__name: ticket.event_name,
-          event__code: '', // We don't have event code in ticket data
+          event__code: '',
           ticket_count: 0,
           total_revenue: 0
         };
@@ -601,7 +624,7 @@ export default function TicketRevenueReport() {
     console.log('Calculated revenue for export:', {
       totalRevenue: calculatedRevenueData.total_revenue,
       eventsCount: calculatedRevenueData.revenue_by_event.length,
-      ticketsProcessed: filteredTickets.length
+      ticketsProcessed: allTickets.length
     });
     
     return calculatedRevenueData;
@@ -1039,7 +1062,7 @@ export default function TicketRevenueReport() {
                   <div>
                     <h3 className="font-semibold text-gray-900 dark:text-white">Ticket Details</h3>
                     <p className="text-xs text-gray-500 dark:text-gray-400">
-                      {tickets.length} tickets • Latest entries first
+                      Showing {Math.min((currentPage - 1) * itemsPerPage + 1, totalTickets)}-{Math.min(currentPage * itemsPerPage, totalTickets)} of {totalTickets} tickets • Page {currentPage} of {totalPages}
                     </p>
                   </div>
                 </div>
@@ -1077,7 +1100,7 @@ export default function TicketRevenueReport() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
-                      {tickets.slice(0, 50).map((ticket) => (
+                      {tickets.map((ticket) => (
                         <tr key={ticket.id} className="hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">
                           <td className="px-4 py-3">
                             <div className="flex items-center gap-2">
@@ -1160,6 +1183,68 @@ export default function TicketRevenueReport() {
                 )}
               </div>
             )}
+            {/* Pagination Controls - Backend Pagination */}
+            {!isTicketTableMinimized && tickets.length > 0 && (
+                <div className="px-4 py-3 border-t border-gray-200 dark:border-gray-700">
+                  <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
+                    {/* Page size selector */}
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm text-gray-700 dark:text-gray-300">Show:</span>
+                      <select
+                        value={apiPageSize}
+                        onChange={(e) => {
+                          setApiPageSize(Number(e.target.value));
+                          setApiPage(1);
+                        }}
+                        className="h-8 rounded-lg border bg-transparent text-gray-800 border-gray-300 focus:border-brand-300 focus:ring-brand-500/20 dark:border-gray-700 dark:text-white/90 dark:focus:border-brand-800 px-2 py-1 text-sm shadow-sm focus:outline-none focus:ring-2 dark:bg-gray-900 transition-colors"
+                      >
+                        <option value={50}>50</option>
+                        <option value={100}>100</option>
+                        <option value={200}>200</option>
+                        <option value={500}>500</option>
+                      </select>
+                      <span className="text-sm text-gray-700 dark:text-gray-300">per page</span>
+                    </div>
+                    
+                    {/* Pagination info */}
+                    <div className="text-sm text-gray-700 dark:text-gray-300">
+                      Showing {Math.min((apiPage - 1) * apiPageSize + 1, totalTickets)}-{Math.min(apiPage * apiPageSize, totalTickets)} of {totalTickets} tickets
+                    </div>
+                    
+                    {/* Pagination buttons */}
+                    <div className="flex items-center gap-2">
+                      {/* Previous button */}
+                      <button
+                        onClick={() => setApiPage(Math.max(1, apiPage - 1))}
+                        disabled={!hasPreviousPage || ticketLoading}
+                        className="inline-flex items-center px-3 py-1.5 text-sm font-medium text-gray-500 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 hover:text-gray-700 disabled:opacity-50 disabled:cursor-not-allowed dark:bg-gray-800 dark:border-gray-700 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-gray-300 transition-colors"
+                      >
+                        <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                        </svg>
+                        Previous
+                      </button>
+                      
+                      {/* Page indicator */}
+                      <div className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-gray-700 bg-gray-100 border border-gray-300 rounded-lg dark:bg-gray-700 dark:border-gray-600 dark:text-gray-300">
+                        Page {apiPage} of {Math.ceil(totalTickets / apiPageSize)}
+                      </div>
+                      
+                      {/* Next button */}
+                      <button
+                        onClick={() => setApiPage(apiPage + 1)}
+                        disabled={!hasNextPage || ticketLoading}
+                        className="inline-flex items-center px-3 py-1.5 text-sm font-medium text-gray-500 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 hover:text-gray-700 disabled:opacity-50 disabled:cursor-not-allowed dark:bg-gray-800 dark:border-gray-700 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-gray-300 transition-colors"
+                      >
+                        Next
+                        <svg className="w-4 h-4 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                        </svg>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
           </div>
         </div>
       </div>
