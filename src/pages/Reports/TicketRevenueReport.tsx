@@ -583,12 +583,12 @@ export default function TicketRevenueReport() {
             
             <div className="relative z-10 flex items-center justify-between">
               <div>
-                <p className="text-purple-100 text-sm font-medium mb-1">Active Events</p>
+                <p className="text-purple-100 text-sm font-medium mb-1">Total Events</p>
                 <p className="text-3xl font-bold mb-1">
-                  {revenueData?.revenue_by_event?.length || events.length}
+                  {events.length}
                 </p>
                 <p className="text-purple-100/80 text-xs">
-                  {selectedEvent ? 'Filtered' : 'Total Events'}
+                  In System
                 </p>
               </div>
               <div className="bg-white/15 backdrop-blur-sm p-3 rounded-xl">
