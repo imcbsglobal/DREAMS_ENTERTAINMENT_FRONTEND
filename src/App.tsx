@@ -31,6 +31,8 @@ import EditStaff from "./pages/Staff/EditStaff";
 import AssignSubEvents from "./pages/Staff/AssignSubEvents";
 import TicketRevenueReport from "./pages/Reports/TicketRevenueReport";
 import StaffReport from "./pages/Reports/StaffReport";
+import AdvanceControl from "./pages/AdvanceControl";
+import DeleteTickets from "./pages/AdvanceControl/DeleteTickets";
 
 export default function App() {
   return (
@@ -65,6 +67,10 @@ export default function App() {
             {/* Reports */}
             <Route path="/ticket-revenue-report" element={<TicketRevenueReport />} />
             <Route path="/staff-report" element={<StaffReport />} />
+
+            {/* Advance Control */}
+            <Route path="/advance-control" element={<AdvanceControl />} />
+            <Route path="/delete-tickets" element={<DeleteTickets />} />
 
             {/* Forms */}
             <Route path="/form-elements" element={<FormElements />} />
