@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import axios from "axios";
 import PageMeta from "../../components/common/PageMeta";
 import PageBreadcrumb from "../../components/common/PageBreadCrumb";
@@ -7,6 +7,59 @@ import Label from "../../components/form/Label";
 import DatePicker from "../../components/form/DatePicker";
 import ExportWithDateRangeButton from "../../components/common/ExportWithDateRangeButton";
 import { exportTicketReport, exportRevenueReport } from "../../utils/excelExport";
+
+// AnimatedCounter Component for live updates
+function AnimatedCounter({ value, duration = 500 }) {
+  const [displayValue, setDisplayValue] = useState(value);
+  const [prevValue, setPrevValue] = useState(value);
+
+  useEffect(() => {
+    if (value === prevValue) return;
+
+    const prevStr = String(prevValue).padStart(String(value).length, '0');
+    const newStr = String(value).padStart(String(value).length, '0');
+
+    let startTime;
+    const animate = (currentTime) => {
+      if (!startTime) startTime = currentTime;
+      const progress = Math.min((currentTime - startTime) / duration, 1);
+      
+      if (progress < 1) {
+        requestAnimationFrame(animate);
+      } else {
+        setDisplayValue(value);
+        setPrevValue(value);
+      }
+    };
+    
+    requestAnimationFrame(animate);
+  }, [value, prevValue, duration]);
+
+  const valueStr = String(displayValue);
+  const newValueStr = String(value);
+  
+  return (
+    <span className="inline-flex">
+      {valueStr.split('').map((digit, index) => {
+        const isChanging = digit !== newValueStr[index];
+        return (
+          <span
+            key={index}
+            className={`inline-block transition-all duration-300 ${
+              isChanging ? 'animate-pulse scale-110 text-green-600 dark:text-green-400' : ''
+            }`}
+            style={{
+              minWidth: '0.6em',
+              textAlign: 'center'
+            }}
+          >
+            {newValueStr[index] || digit}
+          </span>
+        );
+      })}
+    </span>
+  );
+}
 
 interface Ticket {
   id: number;
@@ -97,11 +150,104 @@ export default function TicketRevenueReport() {
   const [apiPageSize, setApiPageSize] = useState(100); // Backend page size
   const [hasNextPage, setHasNextPage] = useState(false);
   const [hasPreviousPage, setHasPreviousPage] = useState(false);
+  
+  // Live update state
+  const [lastTotalTickets, setLastTotalTickets] = useState(0);
+  const [lastTodayTickets, setLastTodayTickets] = useState(0);
+  const [lastRevenue, setLastRevenue] = useState("0");
+  const abortControllerRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
     loadEvents();
     fetchTodayTicketCount(); // Fetch today's count on mount
   }, []);
+  
+  // Live update effect - polls every 5 seconds
+  useEffect(() => {
+    const checkLiveUpdates = async () => {
+      // Only poll when page is visible
+      if (document.hidden) return;
+      
+      try {
+        // Cancel previous request if still running
+        if (abortControllerRef.current) {
+          abortControllerRef.current.abort();
+        }
+        abortControllerRef.current = new AbortController();
+        
+        const token = localStorage.getItem("access_token");
+        const headers = { Authorization: `Bearer ${token}` };
+        
+        // Build URL with current filters
+        let ticketUrl = "https://de.imcbs.com/api/admin/reports/tickets/?page=1&page_size=1";
+        let revenueUrl = "https://de.imcbs.com/api/admin/reports/revenue/";
+        let todayUrl = "https://de.imcbs.com/api/admin/reports/tickets/?today=true&page=1&page_size=1";
+        
+        const params = [];
+        if (selectedEvent) params.push(`event_id=${selectedEvent}`);
+        if (startDate) params.push(`start_date=${startDate}`);
+        if (endDate) params.push(`end_date=${endDate}`);
+        
+        if (params.length > 0) {
+          const paramStr = params.join("&");
+          ticketUrl += '&' + paramStr;
+          revenueUrl += '?' + paramStr;
+        }
+        
+        // Fetch all three in parallel
+        const [ticketRes, revenueRes, todayRes] = await Promise.all([
+          axios.get(ticketUrl, { headers, signal: abortControllerRef.current.signal }),
+          axios.get(revenueUrl, { headers, signal: abortControllerRef.current.signal }),
+          axios.get(todayUrl, { headers, signal: abortControllerRef.current.signal })
+        ]);
+        
+        // Update total tickets if changed
+        const isPaginated = 'results' in ticketRes.data;
+        const newTotalTickets = isPaginated ? ticketRes.data.count : (ticketRes.data as any).total_tickets || 0;
+        
+        if (newTotalTickets !== lastTotalTickets) {
+          setTotalTickets(newTotalTickets);
+          setLastTotalTickets(newTotalTickets);
+        }
+        
+        // Update today's tickets if changed
+        const isTodayPaginated = 'results' in todayRes.data;
+        const newTodayTickets = isTodayPaginated ? todayRes.data.count : (todayRes.data as any).total_tickets || 0;
+        
+        if (newTodayTickets !== lastTodayTickets) {
+          setTodayTickets(newTodayTickets);
+          setLastTodayTickets(newTodayTickets);
+        }
+        
+        // Update revenue if changed
+        const newRevenue = revenueRes.data.total_revenue || "0";
+        if (newRevenue !== lastRevenue) {
+          setRevenueData(revenueRes.data);
+          setLastRevenue(newRevenue);
+        }
+        
+      } catch (error: any) {
+        // Ignore abort errors
+        if (error.name !== 'CanceledError' && error.name !== 'AbortError') {
+          console.error('Live update failed:', error);
+        }
+      }
+    };
+    
+    // Initial check
+    checkLiveUpdates();
+    
+    // Poll every 5 seconds
+    const intervalId = setInterval(checkLiveUpdates, 5000);
+    
+    // Cleanup
+    return () => {
+      clearInterval(intervalId);
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+    };
+  }, [selectedEvent, startDate, endDate, lastTotalTickets, lastTodayTickets, lastRevenue]);
 
   useEffect(() => {
     console.log('TicketRevenueReport useEffect triggered:', {
@@ -517,6 +663,30 @@ export default function TicketRevenueReport() {
       />
       <PageBreadcrumb pageTitle="Ticket & Revenue Report" />
       
+      {/* Live Updates Indicator & Manual Refresh */}
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
+          <div className="flex items-center gap-1.5">
+            <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+            <span>Live Updates Active</span>
+          </div>
+        </div>
+        <button
+          onClick={() => {
+            setApiPage(1);
+            loadTickets();
+            fetchRevenue();
+            fetchEntryTypeBreakdown();
+          }}
+          className="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-brand-500 dark:bg-gray-800 dark:text-gray-300 dark:border-gray-600 dark:hover:bg-gray-700 transition-colors"
+        >
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+          </svg>
+          Refresh Table Data
+        </button>
+      </div>
+      
       <div className="space-y-6">
         {/* Dashboard Stats Cards */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
@@ -532,7 +702,7 @@ export default function TicketRevenueReport() {
             <div className="relative z-10 flex items-center justify-between">
               <div>
                 <p className="text-blue-100 text-sm font-medium mb-1">Total Tickets</p>
-                <p className="text-3xl font-bold mb-1">{totalTickets.toLocaleString()}</p>
+                <p className="text-3xl font-bold mb-1"><AnimatedCounter value={totalTickets} /></p>
                 <p className="text-blue-100/80 text-xs">
                   {activeTab === 'ticket' ? 'Filtered Results' : 'All Time'}
                 </p>
@@ -558,7 +728,7 @@ export default function TicketRevenueReport() {
               <div>
                 <p className="text-green-100 text-sm font-medium mb-1">Total Revenue</p>
                 <p className="text-3xl font-bold mb-1">
-                  ₹{revenueData ? parseFloat(revenueData.total_revenue).toLocaleString('en-IN', { minimumFractionDigits: 2 }) : '0.00'}
+                  ₹<AnimatedCounter value={revenueData ? Math.round(parseFloat(revenueData.total_revenue)) : 0} />
                 </p>
                 <p className="text-green-100/80 text-xs">
                   {(startDate || endDate) ? 'Filtered Period' : 'All Time'}
@@ -612,7 +782,7 @@ export default function TicketRevenueReport() {
               <div>
                 <p className="text-orange-100 text-sm font-medium mb-1">Today's Tickets</p>
                 <p className="text-3xl font-bold mb-1">
-                  {todayTickets.toLocaleString()}
+                  <AnimatedCounter value={todayTickets} />
                 </p>
                 <p className="text-orange-100/80 text-xs">
                   Generated Today
