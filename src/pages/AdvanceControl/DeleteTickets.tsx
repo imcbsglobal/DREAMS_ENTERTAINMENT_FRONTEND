@@ -54,7 +54,8 @@ export default function DeleteTickets() {
   const [deletionSummary, setDeletionSummary] = useState<DeletionSummary | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [step, setStep] = useState<"form" | "preview" | "success">("form");
+  const [step, setStep] = useState<"form" | "preview" | "success" | "no-data">("form");
+  const [showDeletingModal, setShowDeletingModal] = useState(false);
 
   useEffect(() => {
     loadEvents();
@@ -88,10 +89,27 @@ export default function DeleteTickets() {
           headers: { Authorization: `Bearer ${token}` },
         }
       );
-      setPreview(response.data.preview);
-      setStep("preview");
+      
+      // Check if there are no tickets to delete
+      if (response.data.preview && response.data.preview.total_tickets === 0) {
+        setPreview(null);
+        setStep("no-data");
+      } else if (response.data.preview) {
+        setPreview(response.data.preview);
+        setStep("preview");
+      } else {
+        // If no preview data at all
+        setPreview(null);
+        setStep("no-data");
+      }
     } catch (err: any) {
-      setError(err.response?.data?.error || "Failed to load preview");
+      // Check if error is about no data found
+      if (err.response?.status === 404 || err.response?.data?.error?.includes('No tickets found')) {
+        setPreview(null);
+        setStep("no-data");
+      } else {
+        setError(err.response?.data?.error || "Failed to load preview");
+      }
     } finally {
       setLoading(false);
     }
@@ -100,6 +118,7 @@ export default function DeleteTickets() {
   const handleConfirmDelete = async () => {
     setError("");
     setLoading(true);
+    setShowDeletingModal(true);
     try {
       const token = localStorage.getItem("access_token");
       const response = await axios.delete(
@@ -115,8 +134,10 @@ export default function DeleteTickets() {
         }
       );
       setDeletionSummary(response.data.summary);
+      setShowDeletingModal(false);
       setStep("success");
     } catch (err: any) {
+      setShowDeletingModal(false);
       setError(err.response?.data?.error || "Failed to delete tickets");
     } finally {
       setLoading(false);
@@ -136,21 +157,50 @@ export default function DeleteTickets() {
   return (
     <>
       <PageMeta title="Delete Tickets | Dreams Entertainment" />
+      
+      {/* Deleting Modal */}
+      {showDeletingModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-99999">
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl p-8 max-w-md w-full mx-4">
+            <div className="text-center">
+              <div className="flex justify-center mb-4">
+                <svg className="animate-spin h-16 w-16 text-red-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+              </div>
+              <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-4">
+                Deleting Tickets...
+              </h3>
+              <p className="text-gray-600 dark:text-gray-400 mb-6">
+                Please wait while we process your request
+              </p>
+              {/* Progress Bar */}
+              <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2.5 overflow-hidden">
+                <div className="bg-red-600 h-2.5 rounded-full animate-progress"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="p-6">
         <h1 className="text-2xl font-bold text-gray-900 dark:text-white mb-6">
           🗑️ Bulk Delete Tickets
         </h1>
 
         {/* Safety Warning */}
-        <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4 mb-6">
-          <h3 className="text-red-800 dark:text-red-300 font-semibold mb-2">⚠️ Safety Protections Active</h3>
-          <ul className="text-sm text-red-700 dark:text-red-400 space-y-1">
-            <li>✓ Cannot delete today's tickets</li>
-            <li>✓ Cannot delete yesterday's tickets (safety buffer)</li>
-            <li>✓ Two-step confirmation required</li>
-            <li>✓ Admin authentication required</li>
-          </ul>
-        </div>
+        {step === "form" && (
+          <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4 mb-6">
+            <h3 className="text-red-800 dark:text-red-300 font-semibold mb-2">⚠️ Safety Protections Active</h3>
+            <ul className="text-sm text-red-700 dark:text-red-400 space-y-1">
+              <li>✓ Cannot delete today's tickets</li>
+              <li>✓ Cannot delete yesterday's tickets (safety buffer)</li>
+              <li>✓ Two-step confirmation required</li>
+              <li>✓ Admin authentication required</li>
+            </ul>
+          </div>
+        )}
 
         {error && (
           <div className="bg-red-100 dark:bg-red-900/30 border border-red-400 text-red-700 dark:text-red-300 px-4 py-3 rounded mb-6">
@@ -217,6 +267,36 @@ export default function DeleteTickets() {
           </div>
         )}
 
+        {/* Step 2: No Data Found */}
+        {step === "no-data" && (
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
+            <div className="text-center py-8">
+              <div className="flex justify-center mb-4">
+                <img 
+                  src="/images/icons/icons8-database-100.gif" 
+                  alt="No Data" 
+                  className="w-24 h-24"
+                />
+              </div>
+              <h2 className="text-2xl font-semibold text-gray-900 dark:text-white mb-4">
+                No Data Found
+              </h2>
+              <p className="text-gray-600 dark:text-gray-400 mb-2">
+                No tickets found in the selected date range ({startDate} to {endDate}).
+              </p>
+              <p className="text-gray-500 dark:text-gray-500 text-sm mb-6">
+                This could mean the tickets were already deleted, or no events occurred during this period.
+              </p>
+              <button
+                onClick={handleReset}
+                className="bg-gray-900 hover:bg-gray-800 dark:bg-white dark:hover:bg-gray-100 text-white dark:text-gray-900 font-semibold py-3 px-6 rounded-lg transition-colors"
+              >
+                Try Different Date Range
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Step 2: Preview */}
         {step === "preview" && preview && (
           <div className="space-y-6">
@@ -252,30 +332,7 @@ export default function DeleteTickets() {
                 </div>
               </div>
 
-              {/* Sub Event Breakdown */}
-              <div className="mb-6">
-                <h3 className="font-semibold text-gray-900 dark:text-white mb-3">Sub Event Breakdown</h3>
-                <div className="overflow-x-auto">
-                  <table className="w-full">
-                    <thead className="bg-gray-50 dark:bg-gray-700">
-                      <tr>
-                        <th className="px-4 py-2 text-left text-sm font-medium text-gray-700 dark:text-gray-300">Sub Event</th>
-                        <th className="px-4 py-2 text-left text-sm font-medium text-gray-700 dark:text-gray-300">Tickets</th>
-                        <th className="px-4 py-2 text-left text-sm font-medium text-gray-700 dark:text-gray-300">Revenue</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {preview.sub_event_breakdown.map((item, idx) => (
-                        <tr key={idx} className="border-t border-gray-200 dark:border-gray-700">
-                          <td className="px-4 py-2 text-sm text-gray-900 dark:text-white">{item.sub_event__name}</td>
-                          <td className="px-4 py-2 text-sm text-gray-900 dark:text-white">{item.ticket_count}</td>
-                          <td className="px-4 py-2 text-sm text-gray-900 dark:text-white">₹{item.revenue}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
+
 
               {/* Entry Type Breakdown */}
               <div className="mb-6">
@@ -302,19 +359,7 @@ export default function DeleteTickets() {
                 </div>
               </div>
 
-              {/* Affected Staff */}
-              {preview.affected_staff.length > 0 && (
-                <div className="mb-6">
-                  <h3 className="font-semibold text-gray-900 dark:text-white mb-3">Affected Staff</h3>
-                  <div className="flex flex-wrap gap-2">
-                    {preview.affected_staff.map((staff, idx) => (
-                      <span key={idx} className="bg-gray-100 dark:bg-gray-700 px-3 py-1 rounded-full text-sm text-gray-700 dark:text-gray-300">
-                        {staff}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              )}
+
 
               {/* Safety Notes */}
               <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-4 mb-6">
@@ -329,16 +374,17 @@ export default function DeleteTickets() {
               <div className="flex gap-4">
                 <button
                   onClick={handleReset}
-                  className="flex-1 bg-gray-500 hover:bg-gray-600 text-white font-semibold py-3 px-6 rounded-lg transition-colors"
+                  disabled={loading}
+                  className="flex-1 bg-gray-500 hover:bg-gray-600 disabled:bg-gray-400 disabled:cursor-not-allowed text-white font-semibold py-3 px-6 rounded-lg transition-colors"
                 >
                   Cancel
                 </button>
                 <button
                   onClick={handleConfirmDelete}
                   disabled={loading}
-                  className="flex-1 bg-red-600 hover:bg-red-700 disabled:bg-gray-400 text-white font-semibold py-3 px-6 rounded-lg transition-colors"
+                  className="flex-1 bg-red-600 hover:bg-red-700 disabled:bg-gray-400 disabled:cursor-not-allowed text-white font-semibold py-3 px-6 rounded-lg transition-colors"
                 >
-                  {loading ? "Deleting..." : "Confirm Delete"}
+                  Confirm Delete
                 </button>
               </div>
             </div>
@@ -349,7 +395,13 @@ export default function DeleteTickets() {
         {step === "success" && deletionSummary && (
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
             <div className="text-center mb-6">
-              <div className="text-6xl mb-4">✅</div>
+              <div className="flex justify-center mb-4">
+                <img 
+                  src="/images/icons/icons8-tick.gif" 
+                  alt="Success" 
+                  className="w-24 h-24"
+                />
+              </div>
               <h2 className="text-2xl font-semibold text-green-600 dark:text-green-400 mb-2">
                 Deletion Successful
               </h2>
@@ -385,44 +437,11 @@ export default function DeleteTickets() {
               </div>
             </div>
 
-            {/* Affected Staff Details */}
-            {deletionSummary.affected_staff.length > 0 && (
-              <div className="mb-6">
-                <h3 className="font-semibold text-gray-900 dark:text-white mb-3">Affected Staff Details</h3>
-                <div className="overflow-x-auto">
-                  <table className="w-full">
-                    <thead className="bg-gray-50 dark:bg-gray-700">
-                      <tr>
-                        <th className="px-4 py-2 text-left text-sm font-medium text-gray-700 dark:text-gray-300">Staff</th>
-                        <th className="px-4 py-2 text-left text-sm font-medium text-gray-700 dark:text-gray-300">Code</th>
-                        <th className="px-4 py-2 text-left text-sm font-medium text-gray-700 dark:text-gray-300">Tickets Deleted</th>
-                        <th className="px-4 py-2 text-left text-sm font-medium text-gray-700 dark:text-gray-300">Revenue Impact</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {deletionSummary.affected_staff.map((staff, idx) => (
-                        <tr key={idx} className="border-t border-gray-200 dark:border-gray-700">
-                          <td className="px-4 py-2 text-sm text-gray-900 dark:text-white">{staff.username}</td>
-                          <td className="px-4 py-2 text-sm text-gray-900 dark:text-white">{staff.staff_code}</td>
-                          <td className="px-4 py-2 text-sm text-gray-900 dark:text-white">{staff.tickets_deleted}</td>
-                          <td className="px-4 py-2 text-sm text-gray-900 dark:text-white">₹{staff.revenue_impact}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            )}
 
-            <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4 mb-6">
-              <p className="text-sm text-blue-700 dark:text-blue-400">
-                <strong>Note:</strong> {deletionSummary.counter_policy}
-              </p>
-            </div>
 
-            <button
+<button
               onClick={handleReset}
-              className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 px-6 rounded-lg transition-colors"
+              className="w-full bg-gray-900 hover:bg-gray-800 dark:bg-white dark:hover:bg-gray-100 text-white dark:text-gray-900 font-semibold py-3 px-6 rounded-lg transition-colors"
             >
               Delete More Tickets
             </button>

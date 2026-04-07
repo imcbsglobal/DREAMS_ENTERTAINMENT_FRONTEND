@@ -4,14 +4,12 @@ import axios from "axios";
 import { ChevronLeftIcon, EyeCloseIcon, EyeIcon } from "../../icons";
 import Label from "../form/Label";
 import Input from "../form/input/InputField";
-import Checkbox from "../form/input/Checkbox";
 import Button from "../ui/button/Button";
 
 export default function SignInForm() {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
-  const [isChecked, setIsChecked] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
@@ -93,39 +91,30 @@ export default function SignInForm() {
                     </span>
                   </div>
                 </div>
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <Checkbox checked={isChecked} onChange={setIsChecked} />
-                    <span className="block font-normal text-gray-700 text-theme-sm dark:text-gray-400">
-                      Keep me logged in
-                    </span>
-                  </div>
-                  <Link
-                    to="/reset-password"
-                    className="text-sm text-brand-500 hover:text-brand-600 dark:text-brand-400"
-                  >
-                    Forgot password?
-                  </Link>
-                </div>
                 <div>
                   <Button className="w-full" size="sm" disabled={loading}>
                     {loading ? "Signing In..." : "Sign in"}
                   </Button>
                 </div>
+
+                {/* Developer Branding */}
+                <div className="pt-4 border-t border-gray-200 dark:border-gray-800">
+                  <div className="text-center space-y-1">
+                    <a 
+                      href="https://imcbs.com/" 
+                      target="_blank" 
+                      rel="noopener noreferrer"
+                      className="block text-xs font-medium text-gray-400 hover:text-brand-500 dark:text-gray-600 dark:hover:text-brand-400 transition-colors"
+                    >
+                      IMC Business Solution LLP
+                    </a>
+                    <p className="text-xs text-gray-300 dark:text-gray-700">
+                      © 2026 All rights reserved.
+                    </p>
+                  </div>
+                </div>
               </div>
             </form>
-
-            <div className="mt-5">
-              <p className="text-sm font-normal text-center text-gray-700 dark:text-gray-400 sm:text-start">
-                Don&apos;t have an account? {""}
-                <Link
-                  to="/signup"
-                  className="text-brand-500 hover:text-brand-600 dark:text-brand-400"
-                >
-                  Sign Up
-                </Link>
-              </p>
-            </div>
           </div>
         </div>
       </div>

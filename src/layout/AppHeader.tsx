@@ -25,10 +25,31 @@ const AppHeader: React.FC = () => {
     setApplicationMenuOpen(!isApplicationMenuOpen);
   };
 
-  const handleLogout = () => {
-    localStorage.removeItem("access_token");
-    localStorage.removeItem("refresh_token");
-    navigate("/signin");
+  const handleLogout = async () => {
+    try {
+      const token = localStorage.getItem("access_token");
+      
+      // Call logout API endpoint
+      if (token) {
+        await axios.post(
+          "https://de.imcbs.com/api/admin/logout/",
+          {},
+          {
+            headers: { Authorization: `Bearer ${token}` },
+          }
+        );
+      }
+    } catch (error) {
+      console.error("Logout API error:", error);
+      // Continue with logout even if API fails
+    } finally {
+      // Clear tokens from localStorage
+      localStorage.removeItem("access_token");
+      localStorage.removeItem("refresh_token");
+      
+      // Navigate to signin page
+      navigate("/signin");
+    }
   };
 
   const isDashboard = location.pathname === "/dashboard";
